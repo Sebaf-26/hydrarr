@@ -31,6 +31,32 @@ Then open `http://localhost:3000`.
 4. Define environment variables from `.env.example` in the Env section.
 5. Deploy stack.
 
+### Portainer Env example
+
+```env
+PORT=3000
+NODE_ENV=production
+VITE_API_BASE_URL=
+
+SONARR_URL=http://sonarr:8989
+SONARR_API_KEY=your_sonarr_api_key
+
+RADARR_URL=http://radarr:7878
+RADARR_API_KEY=your_radarr_api_key
+
+LIDARR_URL=http://lidarr:8686
+LIDARR_API_KEY=your_lidarr_api_key
+
+READARR_URL=http://readarr:8787
+READARR_API_KEY=your_readarr_api_key
+
+PROWLARR_URL=http://prowlarr:9696
+PROWLARR_API_KEY=your_prowlarr_api_key
+
+BAZARR_URL=http://bazarr:6767
+BAZARR_API_KEY=your_bazarr_api_key
+```
+
 ## License
 
 Apache-2.0
