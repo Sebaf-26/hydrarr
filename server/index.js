@@ -306,8 +306,27 @@ function toArray(value) {
   return Array.isArray(value) ? value : value ? [value] : [];
 }
 
+function isRejectedReleaseRaw(release) {
+  if (!release || typeof release !== "object") return false;
+  if (release.rejected === true) return true;
+  if (release.approved === false) return true;
+  if (release.downloadAllowed === false) return true;
+  if (release.canDownload === false) return true;
+  if (Array.isArray(release.rejections) && release.rejections.length > 0) return true;
+  if (Array.isArray(release.rejectionReasons) && release.rejectionReasons.length > 0) return true;
+  if (Array.isArray(release.rejectionMessages) && release.rejectionMessages.length > 0) return true;
+  if (typeof release.rejectionReason === "string" && release.rejectionReason.trim()) return true;
+  if (typeof release.rejections === "string" && release.rejections.trim()) return true;
+  return false;
+}
+
 function normalizeRelease(service, release) {
-  const rejectionsRaw = toArray(release.rejections || release.rejectionReasons || release.rejectionMessages);
+  const rejectionsRaw = toArray(
+    release.rejections ||
+      release.rejectionReasons ||
+      release.rejectionMessages ||
+      release.rejectionReason
+  );
   const rejections = rejectionsRaw
     .map((item) => (typeof item === "string" ? item : item.reason || item.message || "Rejected"))
     .filter(Boolean);
@@ -334,7 +353,7 @@ function normalizeRelease(service, release) {
       release.qualityWeight?.name ||
       null,
     protocol,
-    rejected: Boolean(release.rejected || rejections.length > 0),
+    rejected: Boolean(isRejectedReleaseRaw(release) || rejections.length > 0),
     rejections,
     full: release
   };
@@ -975,15 +994,20 @@ app.get("/api/releases/has-rejected/batch", async (req, res) => {
         const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
         const payload = await requestArrWithFallback(service, [endpoint]);
         const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
-        return { itemId, hasRejected: records.some((entry) => entry.rejected) };
+        const rejectedCount = records.filter((entry) => entry.rejected).length;
+        return { itemId, hasRejected: rejectedCount > 0, rejectedCount, totalReleases: records.length };
       })
     );
 
     const items = {};
     let failed = 0;
+    let rejectedPositive = 0;
+    let totalReleases = 0;
     for (const result of results) {
       if (result.status === "fulfilled") {
         items[String(result.value.itemId)] = result.value.hasRejected;
+        if (result.value.hasRejected) rejectedPositive += 1;
+        totalReleases += result.value.totalReleases;
       } else {
         failed += 1;
       }
@@ -992,7 +1016,9 @@ app.get("/api/releases/has-rejected/batch", async (req, res) => {
       service,
       total: itemIds.length,
       ok: itemIds.length - failed,
-      failed
+      failed,
+      rejectedPositive,
+      totalReleases
     });
     return res.json({ configured: true, items });
   } catch (err) {
