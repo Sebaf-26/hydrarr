@@ -70,6 +70,7 @@ export default function TvPage() {
   const [openSeries, setOpenSeries] = useState({});
   const [seasonState, setSeasonState] = useState({});
   const [releaseState, setReleaseState] = useState({});
+  const [hasRejectedMap, setHasRejectedMap] = useState({});
 
   useEffect(() => {
     let active = true;
@@ -102,6 +103,34 @@ export default function TvPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    const targets = state.wanted.filter((series) => series.status === "wanted");
+    if (!targets.length) {
+      setHasRejectedMap({});
+      return;
+    }
+
+    let active = true;
+    const itemIds = targets.map((series) => series.id).join(",");
+    apiFetch(`/api/releases/has-rejected/batch?service=sonarr&itemIds=${itemIds}`)
+      .then((json) => {
+        if (!active) return;
+        const payload = json.items || {};
+        const next = {};
+        for (const series of targets) {
+          next[series.id] = Boolean(payload[String(series.id)]);
+        }
+        setHasRejectedMap(next);
+      })
+      .catch(() => {
+        if (active) setHasRejectedMap({});
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [state.wanted]);
 
   function toggleSeries(seriesId) {
     setOpenSeries((prev) => ({ ...prev, [seriesId]: !prev[seriesId] }));
@@ -203,7 +232,7 @@ export default function TvPage() {
   function renderSeriesCard(series) {
     const releaseKey = `sonarr-${series.id}`;
     const rel = releaseState[releaseKey];
-    const canShowInteractive = series.status === "wanted" && Boolean(series.hasRejected);
+    const canShowInteractive = series.status === "wanted" && hasRejectedMap[series.id];
     return (
       <article className="card media-card" key={series.id}>
         <div className="row media-top-row">

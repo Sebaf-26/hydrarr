@@ -71,11 +71,26 @@ async function requestArr(serviceName, endpoint, options = {}) {
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(`${normalizeUrl(service.url)}${endpoint}`, {
-    method: options.method || "GET",
-    headers,
-    body: hasBody ? (typeof options.body === "string" ? options.body : JSON.stringify(options.body)) : undefined
-  });
+  const timeoutMs = Number(options.timeoutMs || 10000);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res;
+  try {
+    res = await fetch(`${normalizeUrl(service.url)}${endpoint}`, {
+      method: options.method || "GET",
+      headers,
+      body: hasBody ? (typeof options.body === "string" ? options.body : JSON.stringify(options.body)) : undefined,
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`${serviceName}: request timeout`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     const text = await res.text();
@@ -684,26 +699,9 @@ app.get("/api/tv/overview", async (_, res) => {
       };
     });
 
-    let wantedDownloading = normalizedSeries
+    const wantedDownloading = normalizedSeries
       .filter((item) => item.status !== "available")
       .sort((a, b) => statusRank(a.status) - statusRank(b.status));
-    const wantedOnly = wantedDownloading.filter((item) => item.status === "wanted");
-    const rejectedChecks = await Promise.allSettled(
-      wantedOnly.map(async (item) => ({
-        id: item.id,
-        hasRejected: await hasRejectedReleases("sonarr", item.id)
-      }))
-    );
-    const rejectedMap = {};
-    for (const result of rejectedChecks) {
-      if (result.status === "fulfilled") {
-        rejectedMap[result.value.id] = result.value.hasRejected;
-      }
-    }
-    wantedDownloading = wantedDownloading.map((item) => ({
-      ...item,
-      hasRejected: item.status === "wanted" ? Boolean(rejectedMap[item.id]) : false
-    }));
     const available = normalizedSeries.filter((item) => item.status === "available");
     return res.json({ configured: true, qbtConfigured, wantedDownloading, available });
   } catch (err) {
@@ -823,26 +821,9 @@ app.get("/api/movies/overview", async (_, res) => {
       };
     });
 
-    let wantedDownloading = normalizedMovies
+    const wantedDownloading = normalizedMovies
       .filter((item) => item.status !== "available")
       .sort((a, b) => statusRank(a.status) - statusRank(b.status));
-    const wantedOnly = wantedDownloading.filter((item) => item.status === "wanted");
-    const rejectedChecks = await Promise.allSettled(
-      wantedOnly.map(async (item) => ({
-        id: item.id,
-        hasRejected: await hasRejectedReleases("radarr", item.id)
-      }))
-    );
-    const rejectedMap = {};
-    for (const result of rejectedChecks) {
-      if (result.status === "fulfilled") {
-        rejectedMap[result.value.id] = result.value.hasRejected;
-      }
-    }
-    wantedDownloading = wantedDownloading.map((item) => ({
-      ...item,
-      hasRejected: item.status === "wanted" ? Boolean(rejectedMap[item.id]) : false
-    }));
     const available = normalizedMovies.filter((item) => item.status === "available");
     return res.json({ configured: true, qbtConfigured, wantedDownloading, available });
   } catch (err) {
