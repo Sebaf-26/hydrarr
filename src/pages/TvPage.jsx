@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib";
-import ServiceBadge from "../components/ServiceBadge";
 
 function StatusPill({ status }) {
   return <span className={`media-state media-state-${status}`}>{status}</span>;
@@ -103,7 +102,6 @@ export default function TvPage() {
     return (
       <article className="card media-card" key={series.id}>
         <div className="row media-top-row">
-          <ServiceBadge name="sonarr" />
           <StatusPill status={series.status} />
         </div>
 
