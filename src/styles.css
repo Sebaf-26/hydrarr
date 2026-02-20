@@ -122,6 +122,7 @@ body {
 
 .media-top-row {
   justify-content: space-between;
+  align-items: flex-start;
 }
 
 .media-card h3 {
@@ -133,9 +134,38 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px 10px;
-  margin: 10px 0 12px;
+  margin: 0;
   font-size: 12px;
   color: var(--muted);
+}
+
+.download-stats-wrap {
+  margin: 10px 0 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.progress-ring {
+  --p: 0deg;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--p), rgba(71, 243, 255, 0.14) 0deg);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.progress-ring-inner {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(7, 18, 37, 0.95);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: var(--text);
 }
 
 .media-state {
@@ -175,6 +205,18 @@ body {
   color: var(--accent);
 }
 
+.episodes-pill-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.episodes-missing {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .expand-area {
   margin-top: 10px;
   display: grid;
@@ -202,9 +244,46 @@ body {
   padding: 2px 0;
 }
 
+.expand-btn-disabled {
+  cursor: default;
+  opacity: 0.82;
+}
+
 .episodes-list ul {
   margin: 8px 0 0;
   padding-left: 20px;
+}
+
+.download-list {
+  display: grid;
+  gap: 8px;
+}
+
+.download-item {
+  border: 1px solid rgba(84, 142, 233, 0.25);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(8, 20, 40, 0.45);
+}
+
+.download-item-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.download-item-head strong {
+  overflow-wrap: anywhere;
+}
+
+.download-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .available-strip {

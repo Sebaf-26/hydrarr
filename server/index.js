@@ -218,6 +218,27 @@ function aggregateQbtDownloads(items) {
   };
 }
 
+function statusRank(status) {
+  const value = String(status || "").toLowerCase();
+  if (value === "downloading") return 0;
+  if (value === "error") return 1;
+  if (value === "wanted") return 2;
+  return 3;
+}
+
+function extractEpisodeHint(text) {
+  const value = String(text || "");
+  const single = value.match(/S(\d{1,2})E(\d{1,3})/i);
+  if (single) {
+    return `S${String(single[1]).padStart(2, "0")}E${String(single[2]).padStart(2, "0")}`;
+  }
+  const range = value.match(/S(\d{1,2})E(\d{1,3})[- ]?E?(\d{1,3})/i);
+  if (range) {
+    return `S${String(range[1]).padStart(2, "0")}E${String(range[2]).padStart(2, "0")}-E${String(range[3]).padStart(2, "0")}`;
+  }
+  return null;
+}
+
 async function qbtLogin() {
   if (!QBT_CONFIG.url || !QBT_CONFIG.username || !QBT_CONFIG.password) {
     return "";
@@ -535,6 +556,31 @@ app.get("/api/tv/overview", async (_, res) => {
         .map((hash) => qbtByHash.get(hash))
         .filter(Boolean);
       const qbtDownload = aggregateQbtDownloads(qbtItems);
+      const downloadItems = queueRecordsForSeries
+        .map((record) => {
+          const hash = normalizeHash(record.downloadId || record.trackedDownloadId || "");
+          const qbt = qbtByHash.get(hash);
+          if (!qbt && !hash) return null;
+          const sourceTitle =
+            qbt?.name ||
+            record.title ||
+            record.releaseTitle ||
+            record.series?.title ||
+            "Download";
+          return {
+            hash,
+            name: sourceTitle,
+            episodeHint: extractEpisodeHint(sourceTitle),
+            state: qbt?.state || record.status || "unknown",
+            progressPct: qbt?.progressPct ?? null,
+            etaSeconds: qbt?.etaSeconds ?? null,
+            isStalled: Boolean(qbt?.isStalled),
+            stalledSeconds: qbt?.stalledSeconds ?? null,
+            peers: qbt?.peers ?? null,
+            sizeGb: qbt?.sizeGb ?? null
+          };
+        })
+        .filter(Boolean);
 
       let status = "available";
       if (queueState === "error") {
@@ -575,11 +621,14 @@ app.get("/api/tv/overview", async (_, res) => {
             };
           }),
         qualityProfileId: item.qualityProfileId || null,
-        download: qbtDownload
+        download: qbtDownload,
+        downloadItems
       };
     });
 
-    const wantedDownloading = normalizedSeries.filter((item) => item.status !== "available");
+    const wantedDownloading = normalizedSeries
+      .filter((item) => item.status !== "available")
+      .sort((a, b) => statusRank(a.status) - statusRank(b.status));
     const available = normalizedSeries.filter((item) => item.status === "available");
     return res.json({ configured: true, qbtConfigured, wantedDownloading, available });
   } catch (err) {
@@ -659,6 +708,25 @@ app.get("/api/movies/overview", async (_, res) => {
         .map((hash) => qbtByHash.get(hash))
         .filter(Boolean);
       const qbtDownload = aggregateQbtDownloads(qbtItems);
+      const downloadItems = queueForMovie
+        .map((record) => {
+          const hash = normalizeHash(record.downloadId || record.trackedDownloadId || "");
+          const qbt = qbtByHash.get(hash);
+          if (!qbt && !hash) return null;
+          const sourceTitle = qbt?.name || record.title || record.releaseTitle || item.title || "Download";
+          return {
+            hash,
+            name: sourceTitle,
+            state: qbt?.state || record.status || "unknown",
+            progressPct: qbt?.progressPct ?? null,
+            etaSeconds: qbt?.etaSeconds ?? null,
+            isStalled: Boolean(qbt?.isStalled),
+            stalledSeconds: qbt?.stalledSeconds ?? null,
+            peers: qbt?.peers ?? null,
+            sizeGb: qbt?.sizeGb ?? null
+          };
+        })
+        .filter(Boolean);
 
       let status = "available";
       if (queueState === "error") {
@@ -675,11 +743,14 @@ app.get("/api/movies/overview", async (_, res) => {
         year: extractYear(item.year) || extractYear(item.inCinemas) || extractYear(item.digitalRelease),
         posterUrl: pickPosterUrl("radarr", item),
         status,
-        download: qbtDownload
+        download: qbtDownload,
+        downloadItems
       };
     });
 
-    const wantedDownloading = normalizedMovies.filter((item) => item.status !== "available");
+    const wantedDownloading = normalizedMovies
+      .filter((item) => item.status !== "available")
+      .sort((a, b) => statusRank(a.status) - statusRank(b.status));
     const available = normalizedMovies.filter((item) => item.status === "available");
     return res.json({ configured: true, qbtConfigured, wantedDownloading, available });
   } catch (err) {

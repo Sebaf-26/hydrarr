@@ -5,6 +5,16 @@ function StatusPill({ status }) {
   return <span className={`media-state media-state-${status}`}>{status}</span>;
 }
 
+function ProgressRing({ value }) {
+  const pct = Math.max(0, Math.min(100, Number(value || 0)));
+  const deg = pct * 3.6;
+  return (
+    <div className="progress-ring" style={{ "--p": `${deg}deg` }}>
+      <div className="progress-ring-inner">{pct.toFixed(1)}%</div>
+    </div>
+  );
+}
+
 function formatEta(seconds) {
   if (!seconds || seconds <= 0) return "-";
   const h = Math.floor(seconds / 3600);
@@ -29,13 +39,34 @@ function MovieCard({ movie }) {
       </div>
       <h3>{movie.title}</h3>
       {movie.download && (
-        <div className="download-stats">
-          <span>Progress: {movie.download.progressPct}%</span>
-          <span>ETA: {formatEta(movie.download.etaSeconds)}</span>
-          <span>Stalled: {movie.download.isStalled ? "Yes" : "No"}</span>
-          <span>Stalled For: {movie.download.isStalled ? formatDuration(movie.download.stalledSeconds) : "-"}</span>
-          <span>Peers: {movie.download.peers}</span>
-          <span>GB: {movie.download.sizeGb}</span>
+        <div className="download-stats-wrap">
+          <ProgressRing value={movie.download.progressPct} />
+          <div className="download-stats">
+            <span>ETA: {formatEta(movie.download.etaSeconds)}</span>
+            <span>Peers: {movie.download.peers}</span>
+            <span>GB: {movie.download.sizeGb}</span>
+            <span>Stalled: {movie.download.isStalled ? "Yes" : "No"}</span>
+            {movie.download.isStalled && <span>Stalled For: {formatDuration(movie.download.stalledSeconds)}</span>}
+          </div>
+        </div>
+      )}
+      {Array.isArray(movie.downloadItems) && movie.downloadItems.length > 0 && (
+        <div className="download-list">
+          {movie.downloadItems.map((item, idx) => (
+            <article className="download-item" key={`${item.hash || item.name}-${idx}`}>
+              <div className="download-item-head">
+                <strong>{item.name}</strong>
+                {typeof item.progressPct === "number" && <span>{item.progressPct.toFixed(1)}%</span>}
+              </div>
+              <div className="download-item-meta">
+                <span>ETA: {formatEta(item.etaSeconds)}</span>
+                <span>Peers: {item.peers ?? "-"}</span>
+                <span>GB: {item.sizeGb ?? "-"}</span>
+                <span>Stalled: {item.isStalled ? "Yes" : "No"}</span>
+                {item.isStalled && <span>Stalled For: {formatDuration(item.stalledSeconds)}</span>}
+              </div>
+            </article>
+          ))}
         </div>
       )}
     </article>

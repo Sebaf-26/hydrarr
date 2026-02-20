@@ -5,6 +5,16 @@ function StatusPill({ status }) {
   return <span className={`media-state media-state-${status}`}>{status}</span>;
 }
 
+function ProgressRing({ value }) {
+  const pct = Math.max(0, Math.min(100, Number(value || 0)));
+  const deg = pct * 3.6;
+  return (
+    <div className="progress-ring" style={{ "--p": `${deg}deg` }}>
+      <div className="progress-ring-inner">{pct.toFixed(1)}%</div>
+    </div>
+  );
+}
+
 function formatEta(seconds) {
   if (!seconds || seconds <= 0) return "-";
   const h = Math.floor(seconds / 3600);
@@ -19,6 +29,22 @@ function formatDuration(seconds) {
   const m = Math.floor((seconds % 3600) / 60);
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
+}
+
+function DownloadMeta({ download }) {
+  if (!download) return null;
+  return (
+    <div className="download-stats-wrap">
+      <ProgressRing value={download.progressPct} />
+      <div className="download-stats">
+        <span>ETA: {formatEta(download.etaSeconds)}</span>
+        <span>Peers: {download.peers}</span>
+        <span>GB: {download.sizeGb}</span>
+        <span>Stalled: {download.isStalled ? "Yes" : "No"}</span>
+        {download.isStalled && <span>Stalled For: {formatDuration(download.stalledSeconds)}</span>}
+      </div>
+    </div>
+  );
 }
 
 function AvailableSeriesCard({ series }) {
@@ -119,23 +145,16 @@ export default function TvPage() {
       <article className="card media-card" key={series.id}>
         <div className="row media-top-row">
           <StatusPill status={series.status} />
-          <span className="episodes-pill">
-            {series.episodeFileCount}/{series.totalEpisodes}
-          </span>
+          <div className="episodes-pill-wrap">
+            <span className="episodes-pill">
+              {series.episodeFileCount}/{series.totalEpisodes}
+            </span>
+            {series.missingEpisodes > 0 && <span className="episodes-missing">Missing: {series.missingEpisodes}</span>}
+          </div>
         </div>
 
         <h3>{series.title}</h3>
-        {series.missingEpisodes > 0 && <p className="muted">Missing: {series.missingEpisodes}</p>}
-        {series.download && (
-          <div className="download-stats">
-            <span>Progress: {series.download.progressPct}%</span>
-            <span>ETA: {formatEta(series.download.etaSeconds)}</span>
-            <span>Stalled: {series.download.isStalled ? "Yes" : "No"}</span>
-            <span>Stalled For: {series.download.isStalled ? formatDuration(series.download.stalledSeconds) : "-"}</span>
-            <span>Peers: {series.download.peers}</span>
-            <span>GB: {series.download.sizeGb}</span>
-          </div>
-        )}
+        <DownloadMeta download={series.download} />
 
         <button type="button" className="action-btn" onClick={() => toggleSeries(series.id)}>
           {openSeries[series.id] ? "Hide seasons" : "Open seasons"}
@@ -143,16 +162,39 @@ export default function TvPage() {
 
         {openSeries[series.id] && (
           <div className="expand-area">
+            {Array.isArray(series.downloadItems) && series.downloadItems.length > 0 && (
+              <div className="download-list">
+                {series.downloadItems.map((item, idx) => (
+                  <article className="download-item" key={`${item.hash || item.name}-${idx}`}>
+                    <div className="download-item-head">
+                      <strong>{item.episodeHint ? `${item.episodeHint} ` : ""}{item.name}</strong>
+                      {typeof item.progressPct === "number" && <span>{item.progressPct.toFixed(1)}%</span>}
+                    </div>
+                    <div className="download-item-meta">
+                      <span>ETA: {formatEta(item.etaSeconds)}</span>
+                      <span>Peers: {item.peers ?? "-"}</span>
+                      <span>GB: {item.sizeGb ?? "-"}</span>
+                      <span>Stalled: {item.isStalled ? "Yes" : "No"}</span>
+                      {item.isStalled && <span>Stalled For: {formatDuration(item.stalledSeconds)}</span>}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
             {(series.seasons || []).map((season) => {
               const seasonKey = `${series.id}-${season.seasonNumber}`;
               const seasonInfo = seasonState[seasonKey];
               const seasonStatus = season.status || "wanted";
+              const isOpenable = seasonStatus !== "available";
               return (
                 <div key={seasonKey} className="expand-line">
                   <button
                     type="button"
-                    className="expand-btn"
-                    onClick={() => toggleSeason(series.id, season.seasonNumber)}
+                    className={isOpenable ? "expand-btn" : "expand-btn expand-btn-disabled"}
+                    onClick={() => {
+                      if (isOpenable) toggleSeason(series.id, season.seasonNumber);
+                    }}
+                    disabled={!isOpenable}
                   >
                     <span>Season {season.seasonNumber}</span>
                     <span className={`season-state season-state-${seasonStatus}`}>
@@ -160,7 +202,7 @@ export default function TvPage() {
                     </span>
                   </button>
 
-                  {seasonInfo?.open && (
+                  {isOpenable && seasonInfo?.open && (
                     <div className="episodes-list">
                       {seasonInfo.loading && <p className="muted">Loading episodes...</p>}
                       {seasonInfo.error && <p className="error">{seasonInfo.error}</p>}
@@ -177,13 +219,6 @@ export default function TvPage() {
                             </li>
                           ))}
                         </ul>
-                      )}
-                      {!seasonInfo.loading && !seasonInfo.error && seasonStatus !== "partially_available" && (
-                        <p className="muted">
-                          {seasonStatus === "available"
-                            ? "All episodes available."
-                            : "No episodes currently available."}
-                        </p>
                       )}
                     </div>
                   )}
