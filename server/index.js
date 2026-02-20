@@ -24,6 +24,14 @@ const SERVICE_SPECS = {
   bazarr: { url: process.env.BAZARR_URL, apiKey: process.env.BAZARR_API_KEY }
 };
 const ALL_SERVICES = Object.keys(SERVICE_SPECS);
+const SERVICE_API_BASE = {
+  sonarr: "/api/v3",
+  radarr: "/api/v3",
+  lidarr: "/api/v1",
+  readarr: "/api/v1",
+  prowlarr: "/api/v1",
+  bazarr: "/api"
+};
 
 const CATEGORY_TO_SERVICES = {
   tv: ["sonarr"],
@@ -60,6 +68,11 @@ async function requestArr(serviceName, endpoint) {
     throw new Error(`${serviceName}: ${res.status} ${text.slice(0, 120)}`);
   }
 
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    const text = await res.text();
+    throw new Error(`${serviceName}: non-JSON response (${text.slice(0, 120)})`);
+  }
   return res.json();
 }
 
@@ -75,11 +88,32 @@ async function requestArrWithFallback(serviceName, endpoints) {
   throw lastError || new Error(`${serviceName}: no endpoint available`);
 }
 
+function getPrimaryBase(serviceName) {
+  return SERVICE_API_BASE[serviceName] || "/api/v1";
+}
+
 function getStatusEndpoints(serviceName) {
+  const primaryBase = getPrimaryBase(serviceName);
+  const primary = `${primaryBase}/system/status`;
+  const fallback = serviceName === "bazarr" ? "/api/v1/system/status" : "/api/system/status";
+  return [primary, fallback];
+}
+
+function getQueueEndpoints(serviceName) {
+  const base = getPrimaryBase(serviceName);
+  return [
+    `${base}/queue?page=1&pageSize=50&sortKey=timeleft&sortDirection=ascending`
+  ];
+}
+
+function getLogEndpoints(serviceName) {
+  const base = getPrimaryBase(serviceName);
   if (serviceName === "bazarr") {
-    return ["/api/system/status", "/api/v1/system/status"];
+    return [`${base}/system/logs?page=1&pageSize=250`];
   }
-  return ["/api/v1/system/status", "/api/system/status"];
+  return [
+    `${base}/log?sortKey=time&sortDirection=descending&page=1&pageSize=250`
+  ];
 }
 
 function normalizeLogEntry(service, item) {
@@ -107,7 +141,7 @@ async function fetchCategoryItems(service) {
 
   const [status, queue] = await Promise.allSettled([
     requestArrWithFallback(service, getStatusEndpoints(service)),
-    requestArr(service, "/api/v1/queue?page=1&pageSize=50&sortKey=timeleft&sortDirection=ascending")
+    requestArrWithFallback(service, getQueueEndpoints(service))
   ]);
 
   const items = [];
@@ -185,14 +219,14 @@ app.get("/api/overview", async (_, res) => {
           status: "online",
           version: status.version || "unknown",
           appName: status.appName || service,
-          message: "Connected"
+          message: `Connected (${cfg.url})`
         };
       } catch (err) {
         return {
           service,
           configured: true,
           status: "offline",
-          message: err.message || "Connection failed"
+          message: `${err.message || "Connection failed"} (${cfg.url})`
         };
       }
     })
@@ -231,8 +265,12 @@ app.get("/api/errors", async (req, res) => {
 
   const logsByService = await Promise.allSettled(
     targets.map(async (service) => {
-      const logs = await requestArr(service, "/api/v1/log?sortKey=time&sortDirection=descending&page=1&pageSize=250");
-      const records = Array.isArray(logs.records) ? logs.records : [];
+      const logs = await requestArrWithFallback(service, getLogEndpoints(service));
+      const records = Array.isArray(logs.records)
+        ? logs.records
+        : Array.isArray(logs.data)
+          ? logs.data
+          : [];
       return records.map((entry) => normalizeLogEntry(service, entry));
     })
   );
