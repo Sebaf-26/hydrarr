@@ -6,6 +6,24 @@ function StatusPill({ status }) {
   return <span className={`media-state media-state-${status}`}>{status}</span>;
 }
 
+function AvailableSeriesCard({ series }) {
+  return (
+    <article className="available-card" key={series.id}>
+      <div className="available-poster-wrap">
+        {series.posterUrl ? (
+          <img className="available-poster" src={series.posterUrl} alt={series.title} loading="lazy" />
+        ) : (
+          <div className="available-poster-fallback">No Poster</div>
+        )}
+      </div>
+      <div className="available-meta">
+        <h4>{series.title}</h4>
+        <p className="muted">{series.year || "-"}</p>
+      </div>
+    </article>
+  );
+}
+
 export default function TvPage() {
   const [state, setState] = useState({ loading: true, error: "", wanted: [], available: [] });
   const [openSeries, setOpenSeries] = useState({});
@@ -170,7 +188,11 @@ export default function TvPage() {
           {state.wanted.length === 0 && <p className="muted">No wanted or downloading series.</p>}
 
           <h3 className="section-title">Available</h3>
-          <div className="grid">{state.available.map(renderSeriesCard)}</div>
+          <div className="available-strip">
+            {state.available.map((series) => (
+              <AvailableSeriesCard key={series.id} series={series} />
+            ))}
+          </div>
           {state.available.length === 0 && <p className="muted">No fully available series found.</p>}
         </>
       )}

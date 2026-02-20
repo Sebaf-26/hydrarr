@@ -19,6 +19,24 @@ function MovieCard({ movie }) {
   );
 }
 
+function AvailableMovieCard({ movie }) {
+  return (
+    <article className="available-card" key={movie.id}>
+      <div className="available-poster-wrap">
+        {movie.posterUrl ? (
+          <img className="available-poster" src={movie.posterUrl} alt={movie.title} loading="lazy" />
+        ) : (
+          <div className="available-poster-fallback">No Poster</div>
+        )}
+      </div>
+      <div className="available-meta">
+        <h4>{movie.title}</h4>
+        <p className="muted">{movie.year || "-"}</p>
+      </div>
+    </article>
+  );
+}
+
 export default function MoviesPage() {
   const [state, setState] = useState({ loading: true, error: "", wanted: [], available: [] });
 
@@ -71,7 +89,11 @@ export default function MoviesPage() {
           {state.wanted.length === 0 && <p className="muted">No wanted or downloading movies.</p>}
 
           <h3 className="section-title">Available</h3>
-          <div className="grid">{state.available.map((movie) => <MovieCard key={movie.id} movie={movie} />)}</div>
+          <div className="available-strip">
+            {state.available.map((movie) => (
+              <AvailableMovieCard key={movie.id} movie={movie} />
+            ))}
+          </div>
           {state.available.length === 0 && <p className="muted">No available movies found.</p>}
         </>
       )}

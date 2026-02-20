@@ -180,6 +180,55 @@ body {
   padding-left: 20px;
 }
 
+.available-strip {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.available-card {
+  min-width: 180px;
+  max-width: 180px;
+  background: var(--panel);
+  border: 1px solid rgba(76, 145, 255, 0.22);
+  border-radius: 14px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.available-poster-wrap {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  background: rgba(7, 18, 37, 0.9);
+}
+
+.available-poster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.available-poster-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.available-meta {
+  padding: 10px;
+}
+
+.available-meta h4 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
 .season-state {
   font-size: 11px;
   letter-spacing: 0.07em;

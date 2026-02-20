@@ -126,6 +126,31 @@ function normalizeLogEntry(service, item) {
   };
 }
 
+function extractYear(value) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && /^\d{4}$/.test(value)) return Number(value);
+  if (typeof value === "string") {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date.getUTCFullYear();
+  }
+  return null;
+}
+
+function buildAssetUrl(serviceName, rawUrl) {
+  if (!rawUrl || typeof rawUrl !== "string") return null;
+  if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) return rawUrl;
+  const cfg = configuredServices[serviceName];
+  if (!cfg) return null;
+  return `${normalizeUrl(cfg.url)}${rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`}`;
+}
+
+function pickPosterUrl(serviceName, item) {
+  const images = Array.isArray(item?.images) ? item.images : [];
+  const poster = images.find((img) => img.coverType === "poster") || images[0];
+  if (!poster) return null;
+  return buildAssetUrl(serviceName, poster.remoteUrl || poster.url || null);
+}
+
 function extractRecords(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.records)) return payload.records;
@@ -312,6 +337,8 @@ app.get("/api/tv/overview", async (_, res) => {
       return {
         id: item.id,
         title: item.title || "Unknown series",
+        year: extractYear(item.year) || extractYear(item.firstAired),
+        posterUrl: pickPosterUrl("sonarr", item),
         status,
         totalEpisodes,
         episodeFileCount,
@@ -425,6 +452,8 @@ app.get("/api/movies/overview", async (_, res) => {
       return {
         id: item.id,
         title: item.title || "Unknown movie",
+        year: extractYear(item.year) || extractYear(item.inCinemas) || extractYear(item.digitalRelease),
+        posterUrl: pickPosterUrl("radarr", item),
         status,
         summary: hasFile ? "Present in library" : "Missing from library"
       };
