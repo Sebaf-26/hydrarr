@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  hydrarr:
+    build: .
+    container_name: hydrarr
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
