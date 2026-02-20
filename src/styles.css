@@ -399,6 +399,63 @@ body {
   margin-bottom: 14px;
 }
 
+.interactive-box {
+  margin-bottom: 20px;
+  padding: 12px;
+  border: 1px solid rgba(84, 142, 233, 0.25);
+  border-radius: 12px;
+  background: rgba(8, 20, 40, 0.45);
+}
+
+.release-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.release-item {
+  border: 1px solid rgba(84, 142, 233, 0.25);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(7, 18, 37, 0.65);
+}
+
+.release-main h4 {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+
+.release-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rel-state {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  border-radius: 999px;
+  padding: 4px 8px;
+  text-transform: uppercase;
+}
+
+.rel-ok {
+  background: rgba(109, 255, 149, 0.15);
+  color: var(--accent-2);
+}
+
+.rel-rejected {
+  background: rgba(255, 91, 121, 0.15);
+  color: var(--danger);
+}
+
+.release-reasons {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--warn);
+}
+
 .filters label {
   display: flex;
   flex-direction: column;

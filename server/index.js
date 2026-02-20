@@ -56,22 +56,34 @@ function normalizeUrl(url) {
   return url.replace(/\/+$/, "");
 }
 
-async function requestArr(serviceName, endpoint) {
+async function requestArr(serviceName, endpoint, options = {}) {
   const service = configuredServices[serviceName];
   if (!service) {
     throw new Error(`Service ${serviceName} is not configured`);
   }
 
+  const hasBody = options.body !== undefined;
+  const headers = {
+    "X-Api-Key": service.apiKey,
+    ...(options.headers || {})
+  };
+  if (hasBody && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const res = await fetch(`${normalizeUrl(service.url)}${endpoint}`, {
-    headers: {
-      "X-Api-Key": service.apiKey,
-      "Content-Type": "application/json"
-    }
+    method: options.method || "GET",
+    headers,
+    body: hasBody ? (typeof options.body === "string" ? options.body : JSON.stringify(options.body)) : undefined
   });
 
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`${serviceName}: ${res.status} ${text.slice(0, 120)}`);
+  }
+
+  if (res.status === 204) {
+    return {};
   }
 
   const contentType = res.headers.get("content-type") || "";
@@ -237,6 +249,44 @@ function extractEpisodeHint(text) {
     return `S${String(range[1]).padStart(2, "0")}E${String(range[2]).padStart(2, "0")}-E${String(range[3]).padStart(2, "0")}`;
   }
   return null;
+}
+
+function toArray(value) {
+  return Array.isArray(value) ? value : value ? [value] : [];
+}
+
+function normalizeRelease(service, release) {
+  const rejectionsRaw = toArray(release.rejections || release.rejectionReasons || release.rejectionMessages);
+  const rejections = rejectionsRaw
+    .map((item) => (typeof item === "string" ? item : item.reason || item.message || "Rejected"))
+    .filter(Boolean);
+  const indexer = release.indexer || release.indexerName || "Unknown";
+  const protocol = release.protocol || "torrent";
+  const size = Number(release.size || 0);
+  const sizeGb = size > 0 ? roundTwo(size / (1024 * 1024 * 1024)) : null;
+
+  return {
+    service,
+    guid: release.guid || release.downloadGuid || null,
+    indexerId: release.indexerId || null,
+    title: release.title || release.releaseTitle || "Unknown release",
+    indexer,
+    age: release.age || null,
+    size,
+    sizeGb,
+    seeders: release.seeders ?? release.peers ?? null,
+    leechers: release.leechers ?? null,
+    language: release.language?.name || release.languages?.[0]?.name || null,
+    quality:
+      release.quality?.quality?.name ||
+      release.quality?.name ||
+      release.qualityWeight?.name ||
+      null,
+    protocol,
+    rejected: Boolean(release.rejected || rejections.length > 0),
+    rejections,
+    full: release
+  };
 }
 
 async function qbtLogin() {
@@ -755,6 +805,87 @@ app.get("/api/movies/overview", async (_, res) => {
     return res.json({ configured: true, qbtConfigured, wantedDownloading, available });
   } catch (err) {
     return res.status(502).json({ error: err.message || "Failed to fetch movies overview" });
+  }
+});
+
+app.get("/api/library/items", async (req, res) => {
+  const service = String(req.query.service || "").toLowerCase();
+  const q = String(req.query.q || "").trim().toLowerCase();
+  if (!["radarr", "sonarr"].includes(service)) {
+    return res.status(400).json({ error: "Service must be radarr or sonarr" });
+  }
+  if (!configuredServices[service]) {
+    return res.json({ configured: false, items: [] });
+  }
+
+  try {
+    const endpoint = service === "radarr" ? `${getPrimaryBase(service)}/movie` : `${getPrimaryBase(service)}/series`;
+    const payload = await requestArrWithFallback(service, [endpoint]);
+    const items = extractRecords(payload)
+      .map((item) => ({
+        id: item.id,
+        title: item.title || item.sortTitle || "Unknown",
+        year: extractYear(item.year) || extractYear(item.inCinemas) || extractYear(item.firstAired)
+      }))
+      .filter((item) => (q ? item.title.toLowerCase().includes(q) : true))
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .slice(0, 300);
+    return res.json({ configured: true, items });
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Failed to fetch library items" });
+  }
+});
+
+app.get("/api/releases", async (req, res) => {
+  const service = String(req.query.service || "").toLowerCase();
+  const itemId = Number(req.query.itemId);
+  if (!["radarr", "sonarr"].includes(service)) {
+    return res.status(400).json({ error: "Service must be radarr or sonarr" });
+  }
+  if (!Number.isFinite(itemId)) {
+    return res.status(400).json({ error: "itemId is required" });
+  }
+  if (!configuredServices[service]) {
+    return res.status(400).json({ error: `${service} not configured` });
+  }
+
+  try {
+    const base = getPrimaryBase(service);
+    const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
+    const payload = await requestArrWithFallback(service, [endpoint]);
+    const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
+    records.sort((a, b) => {
+      if (a.rejected !== b.rejected) return a.rejected ? 1 : -1;
+      return (b.seeders || 0) - (a.seeders || 0);
+    });
+    return res.json({ items: records });
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Failed to fetch releases" });
+  }
+});
+
+app.post("/api/releases/grab", async (req, res) => {
+  const service = String(req.body?.service || "").toLowerCase();
+  const release = req.body?.release;
+  if (!["radarr", "sonarr"].includes(service)) {
+    return res.status(400).json({ error: "Service must be radarr or sonarr" });
+  }
+  if (!release || typeof release !== "object") {
+    return res.status(400).json({ error: "release payload is required" });
+  }
+  if (!configuredServices[service]) {
+    return res.status(400).json({ error: `${service} not configured` });
+  }
+
+  try {
+    const base = getPrimaryBase(service);
+    await requestArr(service, `${base}/release`, {
+      method: "POST",
+      body: release
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Failed to grab release" });
   }
 });
 
