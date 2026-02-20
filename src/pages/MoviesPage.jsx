@@ -28,7 +28,6 @@ function MovieCard({ movie }) {
         <StatusPill status={movie.status} />
       </div>
       <h3>{movie.title}</h3>
-      <p className="muted">{movie.summary}</p>
       {movie.download && (
         <div className="download-stats">
           <span>Progress: {movie.download.progressPct}%</span>

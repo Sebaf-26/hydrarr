@@ -5,7 +5,7 @@ const links = [
   { to: "/tv", label: "TV Series" },
   { to: "/movies", label: "Movies" },
   { to: "/music", label: "Music" },
-  { to: "/errors", label: "Errors" }
+  { to: "/debugging", label: "Debugging" }
 ];
 
 export default function Layout({ children }) {

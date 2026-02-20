@@ -24,6 +24,7 @@ const SERVICE_SPECS = {
   bazarr: { url: process.env.BAZARR_URL, apiKey: process.env.BAZARR_API_KEY }
 };
 const ALL_SERVICES = Object.keys(SERVICE_SPECS);
+const OVERVIEW_SERVICES = [...ALL_SERVICES, "qbittorrent"];
 const SERVICE_API_BASE = {
   sonarr: "/api/v3",
   radarr: "/api/v3",
@@ -169,6 +170,10 @@ function normalizeHash(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function isQbtConfigured() {
+  return Boolean(QBT_CONFIG.url && QBT_CONFIG.username && QBT_CONFIG.password);
+}
+
 function buildQbtDownloadInfo(torrent) {
   const nowSec = Math.floor(Date.now() / 1000);
   const state = String(torrent.state || "").toLowerCase();
@@ -240,7 +245,7 @@ async function qbtLogin() {
 }
 
 async function fetchQbtDownloadsByHash() {
-  if (!QBT_CONFIG.url) {
+  if (!isQbtConfigured()) {
     return { configured: false, itemsByHash: new Map() };
   }
 
@@ -264,6 +269,74 @@ async function fetchQbtDownloadsByHash() {
   }
 
   return { configured: true, itemsByHash: map };
+}
+
+async function fetchQbtStatus() {
+  if (!isQbtConfigured()) {
+    return { configured: false, status: "not_configured", message: "Not configured" };
+  }
+
+  try {
+    const cookie = await qbtLogin();
+    const headers = cookie ? { Cookie: cookie } : {};
+    const [versionRes, transferRes] = await Promise.all([
+      fetch(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/app/version`, { headers }),
+      fetch(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/transfer/info`, { headers })
+    ]);
+
+    if (!versionRes.ok) {
+      const text = await versionRes.text();
+      throw new Error(`qbittorrent version failed: ${versionRes.status} ${text.slice(0, 80)}`);
+    }
+    if (!transferRes.ok) {
+      const text = await transferRes.text();
+      throw new Error(`qbittorrent transfer failed: ${transferRes.status} ${text.slice(0, 80)}`);
+    }
+
+    const version = await versionRes.text();
+    const transfer = await transferRes.json();
+    return {
+      configured: true,
+      status: "online",
+      version: version.trim() || "unknown",
+      message: `Connected (${QBT_CONFIG.url})`,
+      queueing: Boolean(transfer.queueing)
+    };
+  } catch (err) {
+    return {
+      configured: true,
+      status: "offline",
+      message: `${err.message || "Connection failed"} (${QBT_CONFIG.url})`
+    };
+  }
+}
+
+async function fetchQbtLogs() {
+  if (!isQbtConfigured()) return [];
+
+  const cookie = await qbtLogin();
+  const headers = cookie ? { Cookie: cookie } : {};
+  const res = await fetch(
+    `${normalizeUrl(QBT_CONFIG.url)}/api/v2/log/main?normal=true&info=true&warning=true&critical=true&last_known_id=-1`,
+    { headers }
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`qbittorrent logs failed: ${res.status} ${text.slice(0, 120)}`);
+  }
+
+  const data = await res.json();
+  const records = Array.isArray(data) ? data : [];
+  return records.map((item) => {
+    const type = Number(item.type || 1);
+    const level = type >= 4 ? "fatal" : type === 2 ? "warn" : "info";
+    return {
+      service: "qbittorrent",
+      level,
+      message: item.message || "No message",
+      time: item.timestamp ? new Date(item.timestamp * 1000).toISOString() : null
+    };
+  });
 }
 
 function extractRecords(payload) {
@@ -371,14 +444,29 @@ app.get("/api/health", (_, res) => {
 
 app.get("/api/services", (_, res) => {
   res.json({
-    services: ALL_SERVICES,
-    configuredServices: Object.keys(configuredServices)
+    services: [...ALL_SERVICES, "qbittorrent"],
+    configuredServices: [
+      ...Object.keys(configuredServices),
+      ...(isQbtConfigured() ? ["qbittorrent"] : [])
+    ]
   });
 });
 
 app.get("/api/overview", async (_, res) => {
   const items = await Promise.all(
-    ALL_SERVICES.map(async (service) => {
+    OVERVIEW_SERVICES.map(async (service) => {
+      if (service === "qbittorrent") {
+        const qbt = await fetchQbtStatus();
+        return {
+          service,
+          configured: qbt.configured,
+          status: qbt.status,
+          version: qbt.version || undefined,
+          appName: "qBittorrent",
+          message: qbt.message
+        };
+      }
+
       const cfg = configuredServices[service];
       if (!cfg) {
         return {
@@ -587,7 +675,6 @@ app.get("/api/movies/overview", async (_, res) => {
         year: extractYear(item.year) || extractYear(item.inCinemas) || extractYear(item.digitalRelease),
         posterUrl: pickPosterUrl("radarr", item),
         status,
-        summary: hasFile ? "Present in library" : "Missing from library",
         download: qbtDownload
       };
     });
@@ -619,10 +706,11 @@ app.get("/api/errors", async (req, res) => {
   const requestedLevel = (req.query.level || "all").toString().toLowerCase();
   const search = (req.query.search || "").toString().toLowerCase();
 
+  const baseTargets = Object.keys(configuredServices);
+  const qbtEnabled = isQbtConfigured();
+  const allTargets = qbtEnabled ? [...baseTargets, "qbittorrent"] : baseTargets;
   const targets =
-    requestedService === "all"
-      ? Object.keys(configuredServices)
-      : Object.keys(configuredServices).filter((s) => s === requestedService);
+    requestedService === "all" ? allTargets : allTargets.filter((s) => s === requestedService);
 
   if (targets.length === 0) {
     return res.json({ items: [] });
@@ -630,6 +718,9 @@ app.get("/api/errors", async (req, res) => {
 
   const logsByService = await Promise.allSettled(
     targets.map(async (service) => {
+      if (service === "qbittorrent") {
+        return fetchQbtLogs();
+      }
       const logs = await requestArrWithFallback(service, getLogEndpoints(service));
       const records = Array.isArray(logs.records)
         ? logs.records

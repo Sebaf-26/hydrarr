@@ -119,13 +119,13 @@ export default function TvPage() {
       <article className="card media-card" key={series.id}>
         <div className="row media-top-row">
           <StatusPill status={series.status} />
+          <span className="episodes-pill">
+            {series.episodeFileCount}/{series.totalEpisodes}
+          </span>
         </div>
 
         <h3>{series.title}</h3>
-        <p className="muted">
-          {series.episodeFileCount}/{series.totalEpisodes} episodes available
-          {series.missingEpisodes > 0 ? ` | Missing: ${series.missingEpisodes}` : ""}
-        </p>
+        {series.missingEpisodes > 0 && <p className="muted">Missing: {series.missingEpisodes}</p>}
         {series.download && (
           <div className="download-stats">
             <span>Progress: {series.download.progressPct}%</span>

@@ -41,7 +41,7 @@ export default function ErrorsPage() {
   return (
     <section>
       <header className="page-header">
-        <h2>Errors</h2>
+        <h2>Debugging</h2>
       </header>
 
       <div className="filters">

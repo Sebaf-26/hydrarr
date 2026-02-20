@@ -15,7 +15,8 @@ export default function App() {
         <Route path="/tv" element={<TvPage />} />
         <Route path="/movies" element={<MoviesPage />} />
         <Route path="/music" element={<CategoryPage category="music" title="Music" />} />
-        <Route path="/errors" element={<ErrorsPage />} />
+        <Route path="/debugging" element={<ErrorsPage />} />
+        <Route path="/errors" element={<Navigate to="/debugging" replace />} />
       </Routes>
     </Layout>
   );

@@ -166,6 +166,15 @@ body {
   color: var(--danger);
 }
 
+.episodes-pill {
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(71, 243, 255, 0.18);
+  color: var(--accent);
+}
+
 .expand-area {
   margin-top: 10px;
   display: grid;
