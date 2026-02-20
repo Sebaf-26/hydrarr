@@ -69,6 +69,8 @@ export default function TvPage() {
   const [state, setState] = useState({ loading: true, error: "", wanted: [], available: [] });
   const [openSeries, setOpenSeries] = useState({});
   const [seasonState, setSeasonState] = useState({});
+  const [releaseState, setReleaseState] = useState({});
+  const [hasRejectedMap, setHasRejectedMap] = useState({});
 
   useEffect(() => {
     let active = true;
@@ -102,8 +104,93 @@ export default function TvPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const targets = state.wanted.filter((series) => series.status === "wanted");
+    if (!targets.length) return;
+
+    let active = true;
+    Promise.allSettled(
+      targets.map(async (series) => {
+        const json = await apiFetch(`/api/releases/has-rejected?service=sonarr&itemId=${series.id}`);
+        return { id: series.id, hasRejected: Boolean(json.hasRejected) };
+      })
+    ).then((results) => {
+      if (!active) return;
+      const next = {};
+      for (const result of results) {
+        if (result.status === "fulfilled") {
+          next[result.value.id] = result.value.hasRejected;
+        }
+      }
+      setHasRejectedMap((prev) => ({ ...prev, ...next }));
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [state.wanted]);
+
   function toggleSeries(seriesId) {
     setOpenSeries((prev) => ({ ...prev, [seriesId]: !prev[seriesId] }));
+  }
+
+  function toggleInteractive(service, itemId) {
+    const key = `${service}-${itemId}`;
+    const current = releaseState[key];
+    if (current?.loaded) {
+      setReleaseState((prev) => ({
+        ...prev,
+        [key]: { ...current, open: !current.open }
+      }));
+      return;
+    }
+
+    setReleaseState((prev) => ({
+      ...prev,
+      [key]: { loading: true, loaded: false, open: true, error: "", items: [] }
+    }));
+
+    apiFetch(`/api/releases?service=${service}&itemId=${itemId}`)
+      .then((json) => {
+        const rejected = (json.items || []).filter((entry) => entry.rejected);
+        setReleaseState((prev) => ({
+          ...prev,
+          [key]: { loading: false, loaded: true, open: true, error: "", items: rejected }
+        }));
+      })
+      .catch((err) => {
+        setReleaseState((prev) => ({
+          ...prev,
+          [key]: { loading: false, loaded: true, open: true, error: err.message, items: [] }
+        }));
+      });
+  }
+
+  async function grabRelease(service, release, key) {
+    setReleaseState((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] || {}), grabbing: true, grabError: "", grabMessage: "" }
+    }));
+    try {
+      const res = await fetch("/api/releases/grab", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ service, release: release.full })
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "Grab failed");
+      }
+      setReleaseState((prev) => ({
+        ...prev,
+        [key]: { ...(prev[key] || {}), grabbing: false, grabError: "", grabMessage: "Release sent." }
+      }));
+    } catch (err) {
+      setReleaseState((prev) => ({
+        ...prev,
+        [key]: { ...(prev[key] || {}), grabbing: false, grabError: err.message, grabMessage: "" }
+      }));
+    }
   }
 
   function toggleSeason(seriesId, seasonNumber) {
@@ -141,6 +228,8 @@ export default function TvPage() {
   }
 
   function renderSeriesCard(series) {
+    const releaseKey = `sonarr-${series.id}`;
+    const rel = releaseState[releaseKey];
     return (
       <article className="card media-card" key={series.id}>
         <div className="row media-top-row">
@@ -155,6 +244,56 @@ export default function TvPage() {
 
         <h3>{series.title}</h3>
         <DownloadMeta download={series.download} />
+
+        {series.status === "wanted" && hasRejectedMap[series.id] && (
+          <>
+            <button type="button" className="action-btn" onClick={() => toggleInteractive("sonarr", series.id)}>
+              {rel?.open ? "Hide rejected releases" : "Show rejected releases"}
+            </button>
+            {rel?.open && (
+              <div className="release-list">
+                {rel.loading && <p className="muted">Loading rejected releases...</p>}
+                {rel.error && <p className="error">{rel.error}</p>}
+                {rel.grabMessage && <p className="muted">{rel.grabMessage}</p>}
+                {rel.grabError && <p className="error">{rel.grabError}</p>}
+                {!rel.loading && !rel.error && rel.loaded && rel.items.length === 0 && (
+                  <p className="muted">No rejected releases found.</p>
+                )}
+                {!rel.loading &&
+                  rel.items?.map((release, idx) => (
+                    <article className="release-item" key={`${release.guid || release.title}-${idx}`}>
+                      <div className="release-main">
+                        <h4>{release.title}</h4>
+                        <p className="muted">
+                          {release.indexer} | {release.sizeGb ? `${release.sizeGb} GB` : "-"} | Peers{" "}
+                          {release.seeders ?? "-"} / {release.leechers ?? "-"} | {release.language || "-"} |{" "}
+                          {release.quality || "-"}
+                        </p>
+                      </div>
+                      <div className="release-side">
+                        <span className="rel-state rel-rejected">Rejected</span>
+                        <button
+                          type="button"
+                          className="action-btn"
+                          onClick={() => grabRelease("sonarr", release, releaseKey)}
+                          disabled={Boolean(rel.grabbing)}
+                        >
+                          {rel.grabbing ? "Grabbing..." : "Grab"}
+                        </button>
+                      </div>
+                      {release.rejections?.length > 0 && (
+                        <ul className="release-reasons">
+                          {release.rejections.map((reason, ridx) => (
+                            <li key={`${release.title}-${ridx}`}>{reason}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </article>
+                  ))}
+              </div>
+            )}
+          </>
+        )}
 
         <button type="button" className="action-btn" onClick={() => toggleSeries(series.id)}>
           {openSeries[series.id] ? "Hide seasons" : "Open seasons"}

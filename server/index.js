@@ -864,6 +864,31 @@ app.get("/api/releases", async (req, res) => {
   }
 });
 
+app.get("/api/releases/has-rejected", async (req, res) => {
+  const service = String(req.query.service || "").toLowerCase();
+  const itemId = Number(req.query.itemId);
+  if (!["radarr", "sonarr"].includes(service)) {
+    return res.status(400).json({ error: "Service must be radarr or sonarr" });
+  }
+  if (!Number.isFinite(itemId)) {
+    return res.status(400).json({ error: "itemId is required" });
+  }
+  if (!configuredServices[service]) {
+    return res.json({ hasRejected: false, rejectedCount: 0, configured: false });
+  }
+
+  try {
+    const base = getPrimaryBase(service);
+    const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
+    const payload = await requestArrWithFallback(service, [endpoint]);
+    const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
+    const rejectedCount = records.filter((entry) => entry.rejected).length;
+    return res.json({ hasRejected: rejectedCount > 0, rejectedCount, configured: true });
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Failed to check rejected releases" });
+  }
+});
+
 app.post("/api/releases/grab", async (req, res) => {
   const service = String(req.body?.service || "").toLowerCase();
   const release = req.body?.release;
