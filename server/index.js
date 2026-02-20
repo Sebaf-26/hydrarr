@@ -38,6 +38,8 @@ const QBT_CONFIG = {
   username: process.env.QBITTORRENT_USERNAME || "",
   password: process.env.QBITTORRENT_PASSWORD || ""
 };
+const HYDRARR_LOG_LIMIT = 1000;
+const hydrarrLogs = [];
 
 const CATEGORY_TO_SERVICES = {
   tv: ["sonarr"],
@@ -54,6 +56,19 @@ const configuredServices = Object.entries(SERVICE_SPECS)
 
 function normalizeUrl(url) {
   return url.replace(/\/+$/, "");
+}
+
+function addHydrarrLog(level, message, details = null) {
+  const line = {
+    service: "hydrarr",
+    level,
+    message: details ? `${message} | ${JSON.stringify(details)}` : message,
+    time: new Date().toISOString()
+  };
+  hydrarrLogs.push(line);
+  if (hydrarrLogs.length > HYDRARR_LOG_LIMIT) {
+    hydrarrLogs.splice(0, hydrarrLogs.length - HYDRARR_LOG_LIMIT);
+  }
 }
 
 async function requestArr(serviceName, endpoint, options = {}) {
@@ -85,8 +100,10 @@ async function requestArr(serviceName, endpoint, options = {}) {
     });
   } catch (err) {
     if (err.name === "AbortError") {
+      addHydrarrLog("warn", "ARR request timeout", { serviceName, endpoint, timeoutMs });
       throw new Error(`${serviceName}: request timeout`);
     }
+    addHydrarrLog("error", "ARR request failed", { serviceName, endpoint, error: err.message });
     throw err;
   } finally {
     clearTimeout(timer);
@@ -94,6 +111,7 @@ async function requestArr(serviceName, endpoint, options = {}) {
 
   if (!res.ok) {
     const text = await res.text();
+    addHydrarrLog("warn", "ARR non-OK response", { serviceName, endpoint, status: res.status });
     throw new Error(`${serviceName}: ${res.status} ${text.slice(0, 120)}`);
   }
 
@@ -104,6 +122,7 @@ async function requestArr(serviceName, endpoint, options = {}) {
   const contentType = res.headers.get("content-type") || "";
   if (!contentType.includes("application/json")) {
     const text = await res.text();
+    addHydrarrLog("warn", "ARR non-JSON response", { serviceName, endpoint, contentType });
     throw new Error(`${serviceName}: non-JSON response (${text.slice(0, 120)})`);
   }
   return res.json();
@@ -538,10 +557,11 @@ app.get("/api/health", (_, res) => {
 
 app.get("/api/services", (_, res) => {
   res.json({
-    services: [...ALL_SERVICES, "qbittorrent"],
+    services: [...ALL_SERVICES, "qbittorrent", "hydrarr"],
     configuredServices: [
       ...Object.keys(configuredServices),
-      ...(isQbtConfigured() ? ["qbittorrent"] : [])
+      ...(isQbtConfigured() ? ["qbittorrent"] : []),
+      "hydrarr"
     ]
   });
 });
@@ -931,6 +951,7 @@ app.get("/api/releases/has-rejected/batch", async (req, res) => {
   }
 
   try {
+    addHydrarrLog("info", "Batch rejected check started", { service, count: itemIds.length });
     const base = getPrimaryBase(service);
     const results = await Promise.allSettled(
       itemIds.map(async (itemId) => {
@@ -942,13 +963,23 @@ app.get("/api/releases/has-rejected/batch", async (req, res) => {
     );
 
     const items = {};
+    let failed = 0;
     for (const result of results) {
       if (result.status === "fulfilled") {
         items[String(result.value.itemId)] = result.value.hasRejected;
+      } else {
+        failed += 1;
       }
     }
+    addHydrarrLog("info", "Batch rejected check completed", {
+      service,
+      total: itemIds.length,
+      ok: itemIds.length - failed,
+      failed
+    });
     return res.json({ configured: true, items });
   } catch (err) {
+    addHydrarrLog("error", "Batch rejected check failed", { service, error: err.message });
     return res.status(502).json({ error: err.message || "Failed batch rejected check" });
   }
 });
@@ -999,7 +1030,7 @@ app.get("/api/errors", async (req, res) => {
 
   const baseTargets = Object.keys(configuredServices);
   const qbtEnabled = isQbtConfigured();
-  const allTargets = qbtEnabled ? [...baseTargets, "qbittorrent"] : baseTargets;
+  const allTargets = qbtEnabled ? [...baseTargets, "qbittorrent", "hydrarr"] : [...baseTargets, "hydrarr"];
   const targets =
     requestedService === "all" ? allTargets : allTargets.filter((s) => s === requestedService);
 
@@ -1009,6 +1040,9 @@ app.get("/api/errors", async (req, res) => {
 
   const logsByService = await Promise.allSettled(
     targets.map(async (service) => {
+      if (service === "hydrarr") {
+        return [...hydrarrLogs].reverse();
+      }
       if (service === "qbittorrent") {
         return fetchQbtLogs();
       }
@@ -1045,6 +1079,11 @@ if (process.env.NODE_ENV === "production") {
 
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
+  addHydrarrLog("info", "Hydrarr server started", {
+    port,
+    configuredServices: Object.keys(configuredServices),
+    qbtConfigured: isQbtConfigured()
+  });
   console.log(`[hydrarr] server listening on ${port}`);
   console.log(`[hydrarr] configured services: ${Object.keys(configuredServices).join(", ") || "none"}`);
 });
