@@ -130,6 +130,18 @@ body {
   overflow-wrap: anywhere;
 }
 
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.action-btn-inline {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
 .download-stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

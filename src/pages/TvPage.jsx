@@ -230,6 +230,7 @@ export default function TvPage() {
   function renderSeriesCard(series) {
     const releaseKey = `sonarr-${series.id}`;
     const rel = releaseState[releaseKey];
+    const canShowInteractive = series.status === "wanted" && hasRejectedMap[series.id];
     return (
       <article className="card media-card" key={series.id}>
         <div className="row media-top-row">
@@ -242,14 +243,18 @@ export default function TvPage() {
           </div>
         </div>
 
-        <h3>{series.title}</h3>
+        <div className="title-row">
+          <h3>{series.title}</h3>
+          {canShowInteractive && (
+            <button type="button" className="action-btn action-btn-inline" onClick={() => toggleInteractive("sonarr", series.id)}>
+              {rel?.open ? "Hide Interactive Search" : "Interactive Search"}
+            </button>
+          )}
+        </div>
         <DownloadMeta download={series.download} />
 
-        {series.status === "wanted" && hasRejectedMap[series.id] && (
+        {canShowInteractive && (
           <>
-            <button type="button" className="action-btn" onClick={() => toggleInteractive("sonarr", series.id)}>
-              {rel?.open ? "Hide rejected releases" : "Show rejected releases"}
-            </button>
             {rel?.open && (
               <div className="release-list">
                 {rel.loading && <p className="muted">Loading rejected releases...</p>}

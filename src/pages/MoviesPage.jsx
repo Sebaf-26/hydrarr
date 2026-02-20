@@ -170,12 +170,20 @@ export default function MoviesPage() {
   function renderWantedMovie(movie) {
     const key = `radarr-${movie.id}`;
     const rel = releaseState[key];
+    const canShowInteractive = movie.status === "wanted" && hasRejectedMap[movie.id];
     return (
       <article className="card media-card" key={movie.id}>
         <div className="row media-top-row">
           <StatusPill status={movie.status} />
         </div>
-        <h3>{movie.title}</h3>
+        <div className="title-row">
+          <h3>{movie.title}</h3>
+          {canShowInteractive && (
+            <button type="button" className="action-btn action-btn-inline" onClick={() => toggleInteractive(movie.id)}>
+              {rel?.open ? "Hide Interactive Search" : "Interactive Search"}
+            </button>
+          )}
+        </div>
         {movie.download && (
           <div className="download-stats-wrap">
             <ProgressRing value={movie.download.progressPct} />
@@ -207,11 +215,8 @@ export default function MoviesPage() {
             ))}
           </div>
         )}
-        {movie.status === "wanted" && hasRejectedMap[movie.id] && (
+        {canShowInteractive && (
           <>
-            <button type="button" className="action-btn" onClick={() => toggleInteractive(movie.id)}>
-              {rel?.open ? "Hide rejected releases" : "Show rejected releases"}
-            </button>
             {rel?.open && (
               <div className="release-list">
                 {rel.loading && <p className="muted">Loading rejected releases...</p>}
