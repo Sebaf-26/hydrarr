@@ -3,6 +3,7 @@ import { apiFetch } from "../lib";
 
 export default function OverviewPage() {
   const [state, setState] = useState({ loading: true, error: "", items: [] });
+  const [hideNotConfigured, setHideNotConfigured] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -26,12 +27,21 @@ export default function OverviewPage() {
       <header className="page-header">
         <h2>Overview</h2>
       </header>
+      <button
+        type="button"
+        className="action-btn"
+        onClick={() => setHideNotConfigured((prev) => !prev)}
+      >
+        {hideNotConfigured ? "Show not configured" : "Hyde not configured"}
+      </button>
 
       {state.loading && <p>Loading services...</p>}
       {state.error && <p className="error">{state.error}</p>}
 
       <div className="grid">
-        {state.items.map((item) => (
+        {state.items
+          .filter((item) => (hideNotConfigured ? item.configured : true))
+          .map((item) => (
           <article className="card" key={item.service}>
             <div className="row">
               <h3>{item.service.toUpperCase()}</h3>
@@ -43,7 +53,7 @@ export default function OverviewPage() {
               {item.version ? ` | Version: ${item.version}` : ""}
             </p>
           </article>
-        ))}
+          ))}
       </div>
     </section>
   );
