@@ -64,7 +64,13 @@ export default function TvPage() {
       .then((json) => {
         setSeasonState((prev) => ({
           ...prev,
-          [key]: { loading: false, error: "", open: true, episodes: json.items || [] }
+          [key]: {
+            loading: false,
+            error: "",
+            open: true,
+            episodes: json.items || [],
+            seasonStatus: json.seasonStatus || "wanted"
+          }
         }));
       })
       .catch((err) => {
@@ -98,6 +104,7 @@ export default function TvPage() {
             {(series.seasons || []).map((season) => {
               const seasonKey = `${series.id}-${season.seasonNumber}`;
               const seasonInfo = seasonState[seasonKey];
+              const seasonStatus = season.status || "wanted";
               return (
                 <div key={seasonKey} className="expand-line">
                   <button
@@ -105,21 +112,36 @@ export default function TvPage() {
                     className="expand-btn"
                     onClick={() => toggleSeason(series.id, season.seasonNumber)}
                   >
-                    Season {season.seasonNumber}
+                    <span>Season {season.seasonNumber}</span>
+                    <span className={`season-state season-state-${seasonStatus}`}>
+                      {seasonStatus.replace("_", " ")}
+                    </span>
                   </button>
 
                   {seasonInfo?.open && (
                     <div className="episodes-list">
                       {seasonInfo.loading && <p className="muted">Loading episodes...</p>}
                       {seasonInfo.error && <p className="error">{seasonInfo.error}</p>}
-                      {!seasonInfo.loading && !seasonInfo.error && (
+                      {!seasonInfo.loading && !seasonInfo.error && seasonStatus === "partially_available" && (
                         <ul>
                           {seasonInfo.episodes.map((ep) => (
-                            <li key={ep.id}>
-                              E{String(ep.episodeNumber).padStart(2, "0")} - {ep.title} ({ep.status})
+                            <li key={ep.id} className="episode-item">
+                              <span className={ep.hasFile ? "ep-ok" : "ep-miss"}>
+                                {ep.hasFile ? "✓" : "X"}
+                              </span>
+                              <span>
+                                E{String(ep.episodeNumber).padStart(2, "0")} - {ep.title}
+                              </span>
                             </li>
                           ))}
                         </ul>
+                      )}
+                      {!seasonInfo.loading && !seasonInfo.error && seasonStatus !== "partially_available" && (
+                        <p className="muted">
+                          {seasonStatus === "available"
+                            ? "All episodes available."
+                            : "No episodes currently available."}
+                        </p>
                       )}
                     </div>
                   )}
@@ -145,9 +167,11 @@ export default function TvPage() {
         <>
           <h3 className="section-title">Wanted/Downloading</h3>
           <div className="grid">{state.wanted.map(renderSeriesCard)}</div>
+          {state.wanted.length === 0 && <p className="muted">No wanted or downloading series.</p>}
 
           <h3 className="section-title">Available</h3>
           <div className="grid">{state.available.map(renderSeriesCard)}</div>
+          {state.available.length === 0 && <p className="muted">No fully available series found.</p>}
         </>
       )}
     </section>

@@ -279,13 +279,17 @@ app.get("/api/tv/overview", async (_, res) => {
   }
 
   try {
-    const [seriesPayload, queuePayload] = await Promise.all([
+    const [seriesResult, queueResult] = await Promise.allSettled([
       requestArrWithFallback("sonarr", [`${getPrimaryBase("sonarr")}/series`]),
       requestArrWithFallback("sonarr", getQueueEndpoints("sonarr"))
     ]);
 
-    const series = extractRecords(seriesPayload);
-    const queueRecords = extractRecords(queuePayload);
+    if (seriesResult.status === "rejected") {
+      throw seriesResult.reason;
+    }
+
+    const series = extractRecords(seriesResult.value);
+    const queueRecords = queueResult.status === "fulfilled" ? extractRecords(queueResult.value) : [];
     const queueBySeries = buildSeriesQueueMap(queueRecords);
 
     const normalizedSeries = series.map((item) => {
@@ -312,7 +316,26 @@ app.get("/api/tv/overview", async (_, res) => {
         totalEpisodes,
         episodeFileCount,
         missingEpisodes,
-        seasons: (item.seasons || []).filter((season) => season.seasonNumber > 0),
+        seasons: (item.seasons || [])
+          .filter((season) => season.seasonNumber > 0)
+          .map((season) => {
+            const seasonStats = season.statistics || {};
+            const seasonTotal = Number(seasonStats.totalEpisodeCount || seasonStats.episodeCount || 0);
+            const seasonFiles = Number(seasonStats.episodeFileCount || 0);
+            const seasonStatus =
+              seasonTotal > 0 && seasonFiles >= seasonTotal
+                ? "available"
+                : seasonFiles > 0
+                  ? "partially_available"
+                  : "wanted";
+
+            return {
+              seasonNumber: season.seasonNumber,
+              totalEpisodes: seasonTotal,
+              episodeFileCount: seasonFiles,
+              status: seasonStatus
+            };
+          }),
         qualityProfileId: item.qualityProfileId || null
       };
     });
@@ -351,7 +374,16 @@ app.get("/api/tv/series/:seriesId/seasons/:seasonNumber/episodes", async (req, r
         status: item.hasFile ? "available" : "wanted"
       }));
 
-    return res.json({ items: episodes });
+    const totalEpisodes = episodes.length;
+    const availableEpisodes = episodes.filter((item) => item.hasFile).length;
+    const seasonStatus =
+      totalEpisodes > 0 && availableEpisodes === totalEpisodes
+        ? "available"
+        : availableEpisodes > 0
+          ? "partially_available"
+          : "wanted";
+
+    return res.json({ items: episodes, totalEpisodes, availableEpisodes, seasonStatus });
   } catch (err) {
     return res.status(502).json({ error: err.message || "Failed to fetch episodes" });
   }
@@ -363,25 +395,30 @@ app.get("/api/movies/overview", async (_, res) => {
   }
 
   try {
-    const [moviesPayload, queuePayload] = await Promise.all([
+    const [moviesResult, queueResult] = await Promise.allSettled([
       requestArrWithFallback("radarr", [`${getPrimaryBase("radarr")}/movie`]),
       requestArrWithFallback("radarr", getQueueEndpoints("radarr"))
     ]);
 
-    const movies = extractRecords(moviesPayload);
-    const queueRecords = extractRecords(queuePayload);
+    if (moviesResult.status === "rejected") {
+      throw moviesResult.reason;
+    }
+
+    const movies = extractRecords(moviesResult.value);
+    const queueRecords = queueResult.status === "fulfilled" ? extractRecords(queueResult.value) : [];
     const queueByMovie = buildMovieQueueMap(queueRecords);
 
     const normalizedMovies = movies.map((item) => {
       const queueForMovie = queueByMovie.get(item.id) || [];
       const queueState = queueStateFromRecords(queueForMovie);
+      const hasFile = Boolean(item.hasFile || item.movieFile);
 
       let status = "available";
       if (queueState === "error") {
         status = "error";
       } else if (queueState === "downloading") {
         status = "downloading";
-      } else if (!item.hasFile) {
+      } else if (!hasFile) {
         status = "wanted";
       }
 
@@ -389,7 +426,7 @@ app.get("/api/movies/overview", async (_, res) => {
         id: item.id,
         title: item.title || "Unknown movie",
         status,
-        summary: item.hasFile ? "Present in library" : "Missing from library"
+        summary: hasFile ? "Present in library" : "Missing from library"
       };
     });
 
