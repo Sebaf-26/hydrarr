@@ -23,6 +23,7 @@ const SERVICE_SPECS = {
   prowlarr: { url: process.env.PROWLARR_URL, apiKey: process.env.PROWLARR_API_KEY },
   bazarr: { url: process.env.BAZARR_URL, apiKey: process.env.BAZARR_API_KEY }
 };
+const ALL_SERVICES = Object.keys(SERVICE_SPECS);
 
 const CATEGORY_TO_SERVICES = {
   tv: ["sonarr"],
@@ -62,6 +63,25 @@ async function requestArr(serviceName, endpoint) {
   return res.json();
 }
 
+async function requestArrWithFallback(serviceName, endpoints) {
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      return await requestArr(serviceName, endpoint);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error(`${serviceName}: no endpoint available`);
+}
+
+function getStatusEndpoints(serviceName) {
+  if (serviceName === "bazarr") {
+    return ["/api/system/status", "/api/v1/system/status"];
+  }
+  return ["/api/v1/system/status", "/api/system/status"];
+}
+
 function normalizeLogEntry(service, item) {
   const level = String(item.level || "info").toLowerCase();
   return {
@@ -73,8 +93,20 @@ function normalizeLogEntry(service, item) {
 }
 
 async function fetchCategoryItems(service) {
+  if (!configuredServices[service]) {
+    return [
+      {
+        id: `not-configured-${service}`,
+        service,
+        source: "Service",
+        title: `${service.toUpperCase()} not configured`,
+        summary: "Set URL and API key in Portainer environment variables."
+      }
+    ];
+  }
+
   const [status, queue] = await Promise.allSettled([
-    requestArr(service, "/api/v1/system/status"),
+    requestArrWithFallback(service, getStatusEndpoints(service)),
     requestArr(service, "/api/v1/queue?page=1&pageSize=50&sortKey=timeleft&sortDirection=ascending")
   ]);
 
@@ -108,6 +140,16 @@ async function fetchCategoryItems(service) {
     }
   }
 
+  if (status.status === "rejected" && queue.status === "rejected") {
+    items.push({
+      id: `unreachable-${service}`,
+      service,
+      source: "Service",
+      title: `${service.toUpperCase()} unreachable`,
+      summary: status.reason?.message || queue.reason?.message || "Unable to connect."
+    });
+  }
+
   return items;
 }
 
@@ -116,7 +158,47 @@ app.get("/api/health", (_, res) => {
 });
 
 app.get("/api/services", (_, res) => {
-  res.json({ services: Object.keys(configuredServices) });
+  res.json({
+    services: ALL_SERVICES,
+    configuredServices: Object.keys(configuredServices)
+  });
+});
+
+app.get("/api/overview", async (_, res) => {
+  const items = await Promise.all(
+    ALL_SERVICES.map(async (service) => {
+      const cfg = configuredServices[service];
+      if (!cfg) {
+        return {
+          service,
+          configured: false,
+          status: "not_configured",
+          message: "Not configured"
+        };
+      }
+
+      try {
+        const status = await requestArrWithFallback(service, getStatusEndpoints(service));
+        return {
+          service,
+          configured: true,
+          status: "online",
+          version: status.version || "unknown",
+          appName: status.appName || service,
+          message: "Connected"
+        };
+      } catch (err) {
+        return {
+          service,
+          configured: true,
+          status: "offline",
+          message: err.message || "Connection failed"
+        };
+      }
+    })
+  );
+
+  res.json({ items });
 });
 
 app.get("/api/dashboard/:category", async (req, res) => {

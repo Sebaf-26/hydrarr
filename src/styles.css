@@ -155,6 +155,29 @@ select {
   color: var(--accent);
 }
 
+.service-state {
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  padding: 4px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.service-state-online {
+  background: rgba(109, 255, 149, 0.15);
+  color: var(--accent-2);
+}
+
+.service-state-offline {
+  background: rgba(255, 91, 121, 0.15);
+  color: var(--danger);
+}
+
+.service-state-not_configured {
+  background: rgba(255, 184, 77, 0.18);
+  color: var(--warn);
+}
+
 .error {
   color: var(--danger);
 }
