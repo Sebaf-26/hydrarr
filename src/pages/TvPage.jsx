@@ -182,7 +182,7 @@ export default function TvPage() {
       {!state.loading && !state.error && (
         <>
           <h3 className="section-title">Wanted/Downloading</h3>
-          <div className="grid">{state.wanted.map(renderSeriesCard)}</div>
+          <div className="two-col-grid">{state.wanted.map(renderSeriesCard)}</div>
           {state.wanted.length === 0 && <p className="muted">No wanted or downloading series.</p>}
 
           <h3 className="section-title">Available</h3>

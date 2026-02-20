@@ -83,7 +83,7 @@ export default function MoviesPage() {
       {!state.loading && !state.error && (
         <>
           <h3 className="section-title">Wanted/Downloading</h3>
-          <div className="grid">{state.wanted.map((movie) => <MovieCard key={movie.id} movie={movie} />)}</div>
+          <div className="two-col-grid">{state.wanted.map((movie) => <MovieCard key={movie.id} movie={movie} />)}</div>
           {state.wanted.length === 0 && <p className="muted">No wanted or downloading movies.</p>}
 
           <h3 className="section-title">Available</h3>
