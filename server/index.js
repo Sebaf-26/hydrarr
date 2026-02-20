@@ -889,6 +889,47 @@ app.get("/api/releases/has-rejected", async (req, res) => {
   }
 });
 
+app.get("/api/releases/has-rejected/batch", async (req, res) => {
+  const service = String(req.query.service || "").toLowerCase();
+  const idsRaw = String(req.query.itemIds || "");
+  const itemIds = idsRaw
+    .split(",")
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isFinite(value));
+
+  if (!["radarr", "sonarr"].includes(service)) {
+    return res.status(400).json({ error: "Service must be radarr or sonarr" });
+  }
+  if (!itemIds.length) {
+    return res.json({ items: {} });
+  }
+  if (!configuredServices[service]) {
+    return res.json({ configured: false, items: {} });
+  }
+
+  try {
+    const base = getPrimaryBase(service);
+    const results = await Promise.allSettled(
+      itemIds.map(async (itemId) => {
+        const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
+        const payload = await requestArrWithFallback(service, [endpoint]);
+        const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
+        return { itemId, hasRejected: records.some((entry) => entry.rejected) };
+      })
+    );
+
+    const items = {};
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        items[String(result.value.itemId)] = result.value.hasRejected;
+      }
+    }
+    return res.json({ configured: true, items });
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Failed batch rejected check" });
+  }
+});
+
 app.post("/api/releases/grab", async (req, res) => {
   const service = String(req.body?.service || "").toLowerCase();
   const release = req.body?.release;

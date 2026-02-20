@@ -89,24 +89,26 @@ export default function MoviesPage() {
 
   useEffect(() => {
     const targets = state.wanted.filter((movie) => movie.status === "wanted");
-    if (!targets.length) return;
+    if (!targets.length) {
+      setHasRejectedMap({});
+      return;
+    }
 
     let active = true;
-    Promise.allSettled(
-      targets.map(async (movie) => {
-        const json = await apiFetch(`/api/releases/has-rejected?service=radarr&itemId=${movie.id}`);
-        return { id: movie.id, hasRejected: Boolean(json.hasRejected) };
-      })
-    ).then((results) => {
-      if (!active) return;
-      const next = {};
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          next[result.value.id] = result.value.hasRejected;
+    const itemIds = targets.map((movie) => movie.id).join(",");
+    apiFetch(`/api/releases/has-rejected/batch?service=radarr&itemIds=${itemIds}`)
+      .then((json) => {
+        if (!active) return;
+        const payload = json.items || {};
+        const next = {};
+        for (const movie of targets) {
+          next[movie.id] = Boolean(payload[String(movie.id)]);
         }
-      }
-      setHasRejectedMap((prev) => ({ ...prev, ...next }));
-    });
+        setHasRejectedMap(next);
+      })
+      .catch(() => {
+        if (active) setHasRejectedMap({});
+      });
 
     return () => {
       active = false;

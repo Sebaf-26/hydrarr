@@ -106,24 +106,26 @@ export default function TvPage() {
 
   useEffect(() => {
     const targets = state.wanted.filter((series) => series.status === "wanted");
-    if (!targets.length) return;
+    if (!targets.length) {
+      setHasRejectedMap({});
+      return;
+    }
 
     let active = true;
-    Promise.allSettled(
-      targets.map(async (series) => {
-        const json = await apiFetch(`/api/releases/has-rejected?service=sonarr&itemId=${series.id}`);
-        return { id: series.id, hasRejected: Boolean(json.hasRejected) };
-      })
-    ).then((results) => {
-      if (!active) return;
-      const next = {};
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          next[result.value.id] = result.value.hasRejected;
+    const itemIds = targets.map((series) => series.id).join(",");
+    apiFetch(`/api/releases/has-rejected/batch?service=sonarr&itemIds=${itemIds}`)
+      .then((json) => {
+        if (!active) return;
+        const payload = json.items || {};
+        const next = {};
+        for (const series of targets) {
+          next[series.id] = Boolean(payload[String(series.id)]);
         }
-      }
-      setHasRejectedMap((prev) => ({ ...prev, ...next }));
-    });
+        setHasRejectedMap(next);
+      })
+      .catch(() => {
+        if (active) setHasRejectedMap({});
+      });
 
     return () => {
       active = false;
