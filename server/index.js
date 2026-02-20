@@ -289,6 +289,14 @@ function normalizeRelease(service, release) {
   };
 }
 
+async function hasRejectedReleases(service, itemId) {
+  const base = getPrimaryBase(service);
+  const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
+  const payload = await requestArrWithFallback(service, [endpoint]);
+  const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
+  return records.some((entry) => entry.rejected);
+}
+
 async function qbtLogin() {
   if (!QBT_CONFIG.url || !QBT_CONFIG.username || !QBT_CONFIG.password) {
     return "";
@@ -676,9 +684,26 @@ app.get("/api/tv/overview", async (_, res) => {
       };
     });
 
-    const wantedDownloading = normalizedSeries
+    let wantedDownloading = normalizedSeries
       .filter((item) => item.status !== "available")
       .sort((a, b) => statusRank(a.status) - statusRank(b.status));
+    const wantedOnly = wantedDownloading.filter((item) => item.status === "wanted");
+    const rejectedChecks = await Promise.allSettled(
+      wantedOnly.map(async (item) => ({
+        id: item.id,
+        hasRejected: await hasRejectedReleases("sonarr", item.id)
+      }))
+    );
+    const rejectedMap = {};
+    for (const result of rejectedChecks) {
+      if (result.status === "fulfilled") {
+        rejectedMap[result.value.id] = result.value.hasRejected;
+      }
+    }
+    wantedDownloading = wantedDownloading.map((item) => ({
+      ...item,
+      hasRejected: item.status === "wanted" ? Boolean(rejectedMap[item.id]) : false
+    }));
     const available = normalizedSeries.filter((item) => item.status === "available");
     return res.json({ configured: true, qbtConfigured, wantedDownloading, available });
   } catch (err) {
@@ -798,9 +823,26 @@ app.get("/api/movies/overview", async (_, res) => {
       };
     });
 
-    const wantedDownloading = normalizedMovies
+    let wantedDownloading = normalizedMovies
       .filter((item) => item.status !== "available")
       .sort((a, b) => statusRank(a.status) - statusRank(b.status));
+    const wantedOnly = wantedDownloading.filter((item) => item.status === "wanted");
+    const rejectedChecks = await Promise.allSettled(
+      wantedOnly.map(async (item) => ({
+        id: item.id,
+        hasRejected: await hasRejectedReleases("radarr", item.id)
+      }))
+    );
+    const rejectedMap = {};
+    for (const result of rejectedChecks) {
+      if (result.status === "fulfilled") {
+        rejectedMap[result.value.id] = result.value.hasRejected;
+      }
+    }
+    wantedDownloading = wantedDownloading.map((item) => ({
+      ...item,
+      hasRejected: item.status === "wanted" ? Boolean(rejectedMap[item.id]) : false
+    }));
     const available = normalizedMovies.filter((item) => item.status === "available");
     return res.json({ configured: true, qbtConfigured, wantedDownloading, available });
   } catch (err) {
