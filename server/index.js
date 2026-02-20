@@ -126,6 +126,44 @@ function normalizeLogEntry(service, item) {
   };
 }
 
+function extractRecords(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.records)) return payload.records;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
+function queueStateFromRecords(records) {
+  const hasError = records.some((rec) => rec?.errorMessage || String(rec?.status || "").toLowerCase() === "failed");
+  if (hasError) return "error";
+  if (records.length > 0) return "downloading";
+  return "idle";
+}
+
+function buildSeriesQueueMap(records) {
+  const map = new Map();
+  for (const rec of records) {
+    const seriesId = rec?.seriesId ?? rec?.series?.id;
+    if (!seriesId) continue;
+    const current = map.get(seriesId) || [];
+    current.push(rec);
+    map.set(seriesId, current);
+  }
+  return map;
+}
+
+function buildMovieQueueMap(records) {
+  const map = new Map();
+  for (const rec of records) {
+    const movieId = rec?.movieId ?? rec?.movie?.id;
+    if (!movieId) continue;
+    const current = map.get(movieId) || [];
+    current.push(rec);
+    map.set(movieId, current);
+  }
+  return map;
+}
+
 async function fetchCategoryItems(service) {
   if (!configuredServices[service]) {
     return [
@@ -233,6 +271,134 @@ app.get("/api/overview", async (_, res) => {
   );
 
   res.json({ items });
+});
+
+app.get("/api/tv/overview", async (_, res) => {
+  if (!configuredServices.sonarr) {
+    return res.json({ configured: false, wantedDownloading: [], available: [] });
+  }
+
+  try {
+    const [seriesPayload, queuePayload] = await Promise.all([
+      requestArrWithFallback("sonarr", [`${getPrimaryBase("sonarr")}/series`]),
+      requestArrWithFallback("sonarr", getQueueEndpoints("sonarr"))
+    ]);
+
+    const series = extractRecords(seriesPayload);
+    const queueRecords = extractRecords(queuePayload);
+    const queueBySeries = buildSeriesQueueMap(queueRecords);
+
+    const normalizedSeries = series.map((item) => {
+      const stats = item.statistics || {};
+      const totalEpisodes = Number(stats.episodeCount || stats.totalEpisodeCount || 0);
+      const episodeFileCount = Number(stats.episodeFileCount || 0);
+      const missingEpisodes = Math.max(totalEpisodes - episodeFileCount, 0);
+      const queueRecordsForSeries = queueBySeries.get(item.id) || [];
+      const queueState = queueStateFromRecords(queueRecordsForSeries);
+
+      let status = "available";
+      if (queueState === "error") {
+        status = "error";
+      } else if (queueState === "downloading") {
+        status = "downloading";
+      } else if (missingEpisodes > 0) {
+        status = "wanted";
+      }
+
+      return {
+        id: item.id,
+        title: item.title || "Unknown series",
+        status,
+        totalEpisodes,
+        episodeFileCount,
+        missingEpisodes,
+        seasons: (item.seasons || []).filter((season) => season.seasonNumber > 0),
+        qualityProfileId: item.qualityProfileId || null
+      };
+    });
+
+    const wantedDownloading = normalizedSeries.filter((item) => item.status !== "available");
+    const available = normalizedSeries.filter((item) => item.status === "available");
+    return res.json({ configured: true, wantedDownloading, available });
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Failed to fetch TV overview" });
+  }
+});
+
+app.get("/api/tv/series/:seriesId/seasons/:seasonNumber/episodes", async (req, res) => {
+  if (!configuredServices.sonarr) {
+    return res.status(400).json({ error: "Sonarr not configured" });
+  }
+
+  const seriesId = Number(req.params.seriesId);
+  const seasonNumber = Number(req.params.seasonNumber);
+  if (Number.isNaN(seriesId) || Number.isNaN(seasonNumber)) {
+    return res.status(400).json({ error: "Invalid series or season number" });
+  }
+
+  try {
+    const episodesPayload = await requestArrWithFallback("sonarr", [
+      `${getPrimaryBase("sonarr")}/episode?seriesId=${seriesId}`
+    ]);
+    const episodes = extractRecords(episodesPayload)
+      .filter((item) => Number(item.seasonNumber) === seasonNumber)
+      .sort((a, b) => Number(a.episodeNumber || 0) - Number(b.episodeNumber || 0))
+      .map((item) => ({
+        id: item.id,
+        episodeNumber: item.episodeNumber,
+        title: item.title || "Unknown episode",
+        hasFile: Boolean(item.hasFile),
+        status: item.hasFile ? "available" : "wanted"
+      }));
+
+    return res.json({ items: episodes });
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Failed to fetch episodes" });
+  }
+});
+
+app.get("/api/movies/overview", async (_, res) => {
+  if (!configuredServices.radarr) {
+    return res.json({ configured: false, wantedDownloading: [], available: [] });
+  }
+
+  try {
+    const [moviesPayload, queuePayload] = await Promise.all([
+      requestArrWithFallback("radarr", [`${getPrimaryBase("radarr")}/movie`]),
+      requestArrWithFallback("radarr", getQueueEndpoints("radarr"))
+    ]);
+
+    const movies = extractRecords(moviesPayload);
+    const queueRecords = extractRecords(queuePayload);
+    const queueByMovie = buildMovieQueueMap(queueRecords);
+
+    const normalizedMovies = movies.map((item) => {
+      const queueForMovie = queueByMovie.get(item.id) || [];
+      const queueState = queueStateFromRecords(queueForMovie);
+
+      let status = "available";
+      if (queueState === "error") {
+        status = "error";
+      } else if (queueState === "downloading") {
+        status = "downloading";
+      } else if (!item.hasFile) {
+        status = "wanted";
+      }
+
+      return {
+        id: item.id,
+        title: item.title || "Unknown movie",
+        status,
+        summary: item.hasFile ? "Present in library" : "Missing from library"
+      };
+    });
+
+    const wantedDownloading = normalizedMovies.filter((item) => item.status !== "available");
+    const available = normalizedMovies.filter((item) => item.status === "available");
+    return res.json({ configured: true, wantedDownloading, available });
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Failed to fetch movies overview" });
+  }
 });
 
 app.get("/api/dashboard/:category", async (req, res) => {

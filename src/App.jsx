@@ -2,7 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import CategoryPage from "./pages/CategoryPage";
 import ErrorsPage from "./pages/ErrorsPage";
+import MoviesPage from "./pages/MoviesPage";
 import OverviewPage from "./pages/OverviewPage";
+import TvPage from "./pages/TvPage";
 
 export default function App() {
   return (
@@ -10,8 +12,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/overview" replace />} />
         <Route path="/overview" element={<OverviewPage />} />
-        <Route path="/tv" element={<CategoryPage category="tv" title="TV Series" />} />
-        <Route path="/movies" element={<CategoryPage category="movies" title="Movies" />} />
+        <Route path="/tv" element={<TvPage />} />
+        <Route path="/movies" element={<MoviesPage />} />
         <Route path="/music" element={<CategoryPage category="music" title="Music" />} />
         <Route path="/errors" element={<ErrorsPage />} />
       </Routes>

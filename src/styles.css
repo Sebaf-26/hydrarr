@@ -93,6 +93,10 @@ body {
   gap: 14px;
 }
 
+.section-title {
+  margin: 20px 0 12px;
+}
+
 .card,
 .log-item {
   background: var(--panel);
@@ -106,6 +110,71 @@ body {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.media-top-row {
+  justify-content: space-between;
+}
+
+.media-card h3 {
+  margin: 10px 0 8px;
+}
+
+.media-state {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 4px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.media-state-downloading {
+  background: rgba(71, 243, 255, 0.18);
+  color: var(--accent);
+}
+
+.media-state-wanted {
+  background: rgba(255, 184, 77, 0.18);
+  color: var(--warn);
+}
+
+.media-state-available {
+  background: rgba(109, 255, 149, 0.15);
+  color: var(--accent-2);
+}
+
+.media-state-error {
+  background: rgba(255, 91, 121, 0.15);
+  color: var(--danger);
+}
+
+.expand-area {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.expand-line {
+  border: 1px solid rgba(84, 142, 233, 0.3);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(8, 20, 40, 0.55);
+}
+
+.expand-btn {
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 0;
+}
+
+.episodes-list ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
 }
 
 .badge {
