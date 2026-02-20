@@ -32,6 +32,11 @@ const SERVICE_API_BASE = {
   prowlarr: "/api/v1",
   bazarr: "/api"
 };
+const QBT_CONFIG = {
+  url: process.env.QBITTORRENT_URL || "",
+  username: process.env.QBITTORRENT_USERNAME || "",
+  password: process.env.QBITTORRENT_PASSWORD || ""
+};
 
 const CATEGORY_TO_SERVICES = {
   tv: ["sonarr"],
@@ -149,6 +154,116 @@ function pickPosterUrl(serviceName, item) {
   const poster = images.find((img) => img.coverType === "poster") || images[0];
   if (!poster) return null;
   return buildAssetUrl(serviceName, poster.remoteUrl || poster.url || null);
+}
+
+function roundTwo(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function bytesToGb(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return 0;
+  return roundTwo(bytes / (1024 * 1024 * 1024));
+}
+
+function normalizeHash(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function buildQbtDownloadInfo(torrent) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const state = String(torrent.state || "").toLowerCase();
+  const isStalled = state.includes("stalled");
+  const lastActivity = Number(torrent.last_activity || 0);
+  const stalledSeconds = isStalled && lastActivity > 0 ? Math.max(nowSec - lastActivity, 0) : null;
+  const eta = Number(torrent.eta || 0);
+
+  return {
+    hash: normalizeHash(torrent.hash),
+    name: torrent.name || "",
+    state: torrent.state || "unknown",
+    progressPct: roundTwo(Number(torrent.progress || 0) * 100),
+    etaSeconds: eta > 0 ? eta : null,
+    isStalled,
+    stalledSeconds,
+    peers: Number(torrent.num_leechs || 0),
+    sizeGb: bytesToGb(Number(torrent.total_size || torrent.size || 0))
+  };
+}
+
+function aggregateQbtDownloads(items) {
+  if (!items.length) return null;
+  const downloading = items.filter((item) => !item.isStalled);
+  const base = downloading[0] || items[0];
+  const etaCandidates = items
+    .map((item) => item.etaSeconds)
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const stalledCandidates = items
+    .map((item) => item.stalledSeconds)
+    .filter((value) => Number.isFinite(value) && value >= 0);
+
+  return {
+    state: base.state,
+    progressPct: roundTwo(items.reduce((sum, item) => sum + item.progressPct, 0) / items.length),
+    etaSeconds: etaCandidates.length ? Math.min(...etaCandidates) : null,
+    isStalled: items.some((item) => item.isStalled),
+    stalledSeconds: stalledCandidates.length ? Math.max(...stalledCandidates) : null,
+    peers: items.reduce((sum, item) => sum + item.peers, 0),
+    sizeGb: roundTwo(items.reduce((sum, item) => sum + item.sizeGb, 0)),
+    torrents: items.length
+  };
+}
+
+async function qbtLogin() {
+  if (!QBT_CONFIG.url || !QBT_CONFIG.username || !QBT_CONFIG.password) {
+    return "";
+  }
+
+  const form = new URLSearchParams();
+  form.set("username", QBT_CONFIG.username);
+  form.set("password", QBT_CONFIG.password);
+
+  const res = await fetch(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/auth/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: form.toString()
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`qbittorrent login failed: ${res.status} ${text.slice(0, 80)}`);
+  }
+
+  const cookie = res.headers.get("set-cookie") || "";
+  return cookie.split(";")[0] || "";
+}
+
+async function fetchQbtDownloadsByHash() {
+  if (!QBT_CONFIG.url) {
+    return { configured: false, itemsByHash: new Map() };
+  }
+
+  const cookie = await qbtLogin();
+  const headers = cookie ? { Cookie: cookie } : {};
+  const res = await fetch(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/torrents/info`, {
+    headers
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`qbittorrent: ${res.status} ${text.slice(0, 100)}`);
+  }
+
+  const data = await res.json();
+  const map = new Map();
+  for (const torrent of Array.isArray(data) ? data : []) {
+    const info = buildQbtDownloadInfo(torrent);
+    if (!info.hash) continue;
+    map.set(info.hash, info);
+  }
+
+  return { configured: true, itemsByHash: map };
 }
 
 function extractRecords(payload) {
@@ -304,9 +419,10 @@ app.get("/api/tv/overview", async (_, res) => {
   }
 
   try {
-    const [seriesResult, queueResult] = await Promise.allSettled([
+    const [seriesResult, queueResult, qbtResult] = await Promise.allSettled([
       requestArrWithFallback("sonarr", [`${getPrimaryBase("sonarr")}/series`]),
-      requestArrWithFallback("sonarr", getQueueEndpoints("sonarr"))
+      requestArrWithFallback("sonarr", getQueueEndpoints("sonarr")),
+      fetchQbtDownloadsByHash()
     ]);
 
     if (seriesResult.status === "rejected") {
@@ -316,6 +432,8 @@ app.get("/api/tv/overview", async (_, res) => {
     const series = extractRecords(seriesResult.value);
     const queueRecords = queueResult.status === "fulfilled" ? extractRecords(queueResult.value) : [];
     const queueBySeries = buildSeriesQueueMap(queueRecords);
+    const qbtByHash = qbtResult.status === "fulfilled" ? qbtResult.value.itemsByHash : new Map();
+    const qbtConfigured = qbtResult.status === "fulfilled" ? qbtResult.value.configured : Boolean(QBT_CONFIG.url);
 
     const normalizedSeries = series.map((item) => {
       const stats = item.statistics || {};
@@ -324,6 +442,11 @@ app.get("/api/tv/overview", async (_, res) => {
       const missingEpisodes = Math.max(totalEpisodes - episodeFileCount, 0);
       const queueRecordsForSeries = queueBySeries.get(item.id) || [];
       const queueState = queueStateFromRecords(queueRecordsForSeries);
+      const qbtItems = queueRecordsForSeries
+        .map((record) => normalizeHash(record.downloadId || record.trackedDownloadId || ""))
+        .map((hash) => qbtByHash.get(hash))
+        .filter(Boolean);
+      const qbtDownload = aggregateQbtDownloads(qbtItems);
 
       let status = "available";
       if (queueState === "error") {
@@ -363,13 +486,14 @@ app.get("/api/tv/overview", async (_, res) => {
               status: seasonStatus
             };
           }),
-        qualityProfileId: item.qualityProfileId || null
+        qualityProfileId: item.qualityProfileId || null,
+        download: qbtDownload
       };
     });
 
     const wantedDownloading = normalizedSeries.filter((item) => item.status !== "available");
     const available = normalizedSeries.filter((item) => item.status === "available");
-    return res.json({ configured: true, wantedDownloading, available });
+    return res.json({ configured: true, qbtConfigured, wantedDownloading, available });
   } catch (err) {
     return res.status(502).json({ error: err.message || "Failed to fetch TV overview" });
   }
@@ -422,9 +546,10 @@ app.get("/api/movies/overview", async (_, res) => {
   }
 
   try {
-    const [moviesResult, queueResult] = await Promise.allSettled([
+    const [moviesResult, queueResult, qbtResult] = await Promise.allSettled([
       requestArrWithFallback("radarr", [`${getPrimaryBase("radarr")}/movie`]),
-      requestArrWithFallback("radarr", getQueueEndpoints("radarr"))
+      requestArrWithFallback("radarr", getQueueEndpoints("radarr")),
+      fetchQbtDownloadsByHash()
     ]);
 
     if (moviesResult.status === "rejected") {
@@ -434,11 +559,18 @@ app.get("/api/movies/overview", async (_, res) => {
     const movies = extractRecords(moviesResult.value);
     const queueRecords = queueResult.status === "fulfilled" ? extractRecords(queueResult.value) : [];
     const queueByMovie = buildMovieQueueMap(queueRecords);
+    const qbtByHash = qbtResult.status === "fulfilled" ? qbtResult.value.itemsByHash : new Map();
+    const qbtConfigured = qbtResult.status === "fulfilled" ? qbtResult.value.configured : Boolean(QBT_CONFIG.url);
 
     const normalizedMovies = movies.map((item) => {
       const queueForMovie = queueByMovie.get(item.id) || [];
       const queueState = queueStateFromRecords(queueForMovie);
       const hasFile = Boolean(item.hasFile || item.movieFile);
+      const qbtItems = queueForMovie
+        .map((record) => normalizeHash(record.downloadId || record.trackedDownloadId || ""))
+        .map((hash) => qbtByHash.get(hash))
+        .filter(Boolean);
+      const qbtDownload = aggregateQbtDownloads(qbtItems);
 
       let status = "available";
       if (queueState === "error") {
@@ -455,13 +587,14 @@ app.get("/api/movies/overview", async (_, res) => {
         year: extractYear(item.year) || extractYear(item.inCinemas) || extractYear(item.digitalRelease),
         posterUrl: pickPosterUrl("radarr", item),
         status,
-        summary: hasFile ? "Present in library" : "Missing from library"
+        summary: hasFile ? "Present in library" : "Missing from library",
+        download: qbtDownload
       };
     });
 
     const wantedDownloading = normalizedMovies.filter((item) => item.status !== "available");
     const available = normalizedMovies.filter((item) => item.status === "available");
-    return res.json({ configured: true, wantedDownloading, available });
+    return res.json({ configured: true, qbtConfigured, wantedDownloading, available });
   } catch (err) {
     return res.status(502).json({ error: err.message || "Failed to fetch movies overview" });
   }

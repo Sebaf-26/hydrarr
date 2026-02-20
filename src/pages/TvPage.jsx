@@ -5,6 +5,22 @@ function StatusPill({ status }) {
   return <span className={`media-state media-state-${status}`}>{status}</span>;
 }
 
+function formatEta(seconds) {
+  if (!seconds || seconds <= 0) return "-";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return "-";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 function AvailableSeriesCard({ series }) {
   return (
     <article className="available-card" key={series.id}>
@@ -110,6 +126,16 @@ export default function TvPage() {
           {series.episodeFileCount}/{series.totalEpisodes} episodes available
           {series.missingEpisodes > 0 ? ` | Missing: ${series.missingEpisodes}` : ""}
         </p>
+        {series.download && (
+          <div className="download-stats">
+            <span>Progress: {series.download.progressPct}%</span>
+            <span>ETA: {formatEta(series.download.etaSeconds)}</span>
+            <span>Stalled: {series.download.isStalled ? "Yes" : "No"}</span>
+            <span>Stalled For: {series.download.isStalled ? formatDuration(series.download.stalledSeconds) : "-"}</span>
+            <span>Peers: {series.download.peers}</span>
+            <span>GB: {series.download.sizeGb}</span>
+          </div>
+        )}
 
         <button type="button" className="action-btn" onClick={() => toggleSeries(series.id)}>
           {openSeries[series.id] ? "Hide seasons" : "Open seasons"}

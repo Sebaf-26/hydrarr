@@ -7,6 +7,7 @@ Hydrarr is a unified ARR dashboard for Sonarr, Radarr, Lidarr, Readarr, Prowlarr
 - TV, Movies, and Music overview pages
 - Centralized Errors page
 - Error filtering by service, level, and search term
+- Optional qBittorrent integration for live download details (progress, ETA, stalled, peers, GB)
 - Runtime configuration via `.env` (ideal for Portainer Git Repository deployment)
 
 ## Environment variables
@@ -55,6 +56,10 @@ PROWLARR_API_KEY=your_prowlarr_api_key
 
 BAZARR_URL=http://bazarr:6767
 BAZARR_API_KEY=your_bazarr_api_key
+
+QBITTORRENT_URL=http://qbittorrent:8080
+QBITTORRENT_USERNAME=admin
+QBITTORRENT_PASSWORD=your_qbittorrent_password
 ```
 
 ## License

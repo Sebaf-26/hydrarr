@@ -5,6 +5,22 @@ function StatusPill({ status }) {
   return <span className={`media-state media-state-${status}`}>{status}</span>;
 }
 
+function formatEta(seconds) {
+  if (!seconds || seconds <= 0) return "-";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return "-";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 function MovieCard({ movie }) {
   return (
     <article className="card media-card" key={movie.id}>
@@ -13,6 +29,16 @@ function MovieCard({ movie }) {
       </div>
       <h3>{movie.title}</h3>
       <p className="muted">{movie.summary}</p>
+      {movie.download && (
+        <div className="download-stats">
+          <span>Progress: {movie.download.progressPct}%</span>
+          <span>ETA: {formatEta(movie.download.etaSeconds)}</span>
+          <span>Stalled: {movie.download.isStalled ? "Yes" : "No"}</span>
+          <span>Stalled For: {movie.download.isStalled ? formatDuration(movie.download.stalledSeconds) : "-"}</span>
+          <span>Peers: {movie.download.peers}</span>
+          <span>GB: {movie.download.sizeGb}</span>
+        </div>
+      )}
     </article>
   );
 }
