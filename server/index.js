@@ -58,11 +58,28 @@ function normalizeUrl(url) {
   return url.replace(/\/+$/, "");
 }
 
+function formatHydrarrDetails(details) {
+  if (!details || typeof details !== "object") return "";
+  const pairs = Object.entries(details).map(([key, value]) => {
+    if (Array.isArray(value)) {
+      const preview = value.slice(0, 8).join(", ");
+      const suffix = value.length > 8 ? ` ...(+${value.length - 8})` : "";
+      return `${key}=[${preview}${suffix}]`;
+    }
+    if (value && typeof value === "object") {
+      return `${key}=${JSON.stringify(value)}`;
+    }
+    return `${key}=${value}`;
+  });
+  return pairs.join(" | ");
+}
+
 function addHydrarrLog(level, message, details = null) {
+  const detailsText = formatHydrarrDetails(details);
   const line = {
     service: "hydrarr",
     level,
-    message: details ? `${message} | ${JSON.stringify(details)}` : message,
+    message: detailsText ? `${message} | ${detailsText}` : message,
     time: new Date().toISOString()
   };
   hydrarrLogs.push(line);
