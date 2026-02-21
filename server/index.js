@@ -145,16 +145,37 @@ async function requestArr(serviceName, endpoint, options = {}) {
   return res.json();
 }
 
-async function requestArrWithFallback(serviceName, endpoints) {
+async function requestArrWithFallback(serviceName, endpoints, options = {}) {
   let lastError = null;
   for (const endpoint of endpoints) {
     try {
-      return await requestArr(serviceName, endpoint);
+      return await requestArr(serviceName, endpoint, options);
     } catch (err) {
       lastError = err;
     }
   }
   throw lastError || new Error(`${serviceName}: no endpoint available`);
+}
+
+async function asyncMapLimit(items, limit, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const idx = nextIndex++;
+      if (idx >= items.length) return;
+      try {
+        results[idx] = { status: "fulfilled", value: await mapper(items[idx], idx) };
+      } catch (error) {
+        results[idx] = { status: "rejected", reason: error };
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 function getPrimaryBase(serviceName) {
@@ -931,7 +952,7 @@ app.get("/api/releases", async (req, res) => {
   try {
     const base = getPrimaryBase(service);
     const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
-    const payload = await requestArrWithFallback(service, [endpoint]);
+    const payload = await requestArrWithFallback(service, [endpoint], { timeoutMs: 30000 });
     const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
     records.sort((a, b) => {
       if (a.rejected !== b.rejected) return a.rejected ? 1 : -1;
@@ -959,7 +980,7 @@ app.get("/api/releases/has-rejected", async (req, res) => {
   try {
     const base = getPrimaryBase(service);
     const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
-    const payload = await requestArrWithFallback(service, [endpoint]);
+    const payload = await requestArrWithFallback(service, [endpoint], { timeoutMs: 30000 });
     const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
     const rejectedCount = records.filter((entry) => entry.rejected).length;
     return res.json({ hasRejected: rejectedCount > 0, rejectedCount, configured: true });
@@ -987,17 +1008,17 @@ app.get("/api/releases/has-rejected/batch", async (req, res) => {
   }
 
   try {
+    const startedAt = Date.now();
     addHydrarrLog("info", "Batch rejected check started", { service, count: itemIds.length });
     const base = getPrimaryBase(service);
-    const results = await Promise.allSettled(
-      itemIds.map(async (itemId) => {
+    const concurrency = service === "sonarr" ? 3 : 6;
+    const results = await asyncMapLimit(itemIds, concurrency, async (itemId) => {
         const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
-        const payload = await requestArrWithFallback(service, [endpoint]);
+        const payload = await requestArrWithFallback(service, [endpoint], { timeoutMs: 30000 });
         const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
         const rejectedCount = records.filter((entry) => entry.rejected).length;
         return { itemId, hasRejected: rejectedCount > 0, rejectedCount, totalReleases: records.length };
-      })
-    );
+      });
 
     const items = {};
     let failed = 0;
@@ -1018,7 +1039,9 @@ app.get("/api/releases/has-rejected/batch", async (req, res) => {
       ok: itemIds.length - failed,
       failed,
       rejectedPositive,
-      totalReleases
+      totalReleases,
+      concurrency,
+      elapsedMs: Date.now() - startedAt
     });
     return res.json({ configured: true, items });
   } catch (err) {
