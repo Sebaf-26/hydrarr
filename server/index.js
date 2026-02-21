@@ -952,7 +952,7 @@ app.get("/api/releases", async (req, res) => {
   try {
     const base = getPrimaryBase(service);
     const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
-    const payload = await requestArrWithFallback(service, [endpoint], { timeoutMs: 30000 });
+    const payload = await requestArrWithFallback(service, [endpoint], { timeoutMs: 60000 });
     const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
     records.sort((a, b) => {
       if (a.rejected !== b.rejected) return a.rejected ? 1 : -1;
@@ -1024,13 +1024,20 @@ app.get("/api/releases/has-rejected/batch", async (req, res) => {
     let failed = 0;
     let rejectedPositive = 0;
     let totalReleases = 0;
-    for (const result of results) {
+    const failedIds = [];
+    for (let i = 0; i < results.length; i += 1) {
+      const result = results[i];
       if (result.status === "fulfilled") {
         items[String(result.value.itemId)] = result.value.hasRejected;
         if (result.value.hasRejected) rejectedPositive += 1;
         totalReleases += result.value.totalReleases;
       } else {
         failed += 1;
+        const id = itemIds[i];
+        if (Number.isFinite(id)) {
+          items[String(id)] = null;
+          failedIds.push(id);
+        }
       }
     }
     addHydrarrLog("info", "Batch rejected check completed", {
@@ -1043,7 +1050,7 @@ app.get("/api/releases/has-rejected/batch", async (req, res) => {
       concurrency,
       elapsedMs: Date.now() - startedAt
     });
-    return res.json({ configured: true, items });
+    return res.json({ configured: true, items, failedIds });
   } catch (err) {
     addHydrarrLog("error", "Batch rejected check failed", { service, error: err.message });
     return res.status(502).json({ error: err.message || "Failed batch rejected check" });

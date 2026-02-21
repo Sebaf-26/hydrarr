@@ -102,7 +102,8 @@ export default function MoviesPage() {
         const payload = json.items || {};
         const next = {};
         for (const movie of targets) {
-          next[movie.id] = Boolean(payload[String(movie.id)]);
+          const raw = payload[String(movie.id)];
+          next[movie.id] = raw === null ? null : Boolean(raw);
         }
         setHasRejectedMap(next);
       })
@@ -172,7 +173,8 @@ export default function MoviesPage() {
   function renderWantedMovie(movie) {
     const key = `radarr-${movie.id}`;
     const rel = releaseState[key];
-    const canShowInteractive = movie.status === "wanted" && hasRejectedMap[movie.id];
+    const hasRejectedState = hasRejectedMap[movie.id];
+    const canShowInteractive = movie.status === "wanted" && hasRejectedState !== false;
     return (
       <article className="card media-card" key={movie.id}>
         <div className="row media-top-row">

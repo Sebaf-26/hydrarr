@@ -119,7 +119,8 @@ export default function TvPage() {
         const payload = json.items || {};
         const next = {};
         for (const series of targets) {
-          next[series.id] = Boolean(payload[String(series.id)]);
+          const raw = payload[String(series.id)];
+          next[series.id] = raw === null ? null : Boolean(raw);
         }
         setHasRejectedMap(next);
       })
@@ -232,7 +233,8 @@ export default function TvPage() {
   function renderSeriesCard(series) {
     const releaseKey = `sonarr-${series.id}`;
     const rel = releaseState[releaseKey];
-    const canShowInteractive = series.status === "wanted" && hasRejectedMap[series.id];
+    const hasRejectedState = hasRejectedMap[series.id];
+    const canShowInteractive = series.status === "wanted" && hasRejectedState !== false;
     return (
       <article className="card media-card" key={series.id}>
         <div className="row media-top-row">
