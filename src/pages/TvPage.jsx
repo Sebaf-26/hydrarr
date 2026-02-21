@@ -120,7 +120,13 @@ export default function TvPage() {
         const next = {};
         for (const series of targets) {
           const raw = payload[String(series.id)];
-          next[series.id] = raw === null ? null : Boolean(raw);
+          next[series.id] =
+            raw === null
+              ? null
+              : {
+                  hasRejected: Boolean(raw?.hasRejected),
+                  rejectedCount: Number(raw?.rejectedCount || 0)
+                };
         }
         setHasRejectedMap(next);
       })
@@ -234,7 +240,9 @@ export default function TvPage() {
     const releaseKey = `sonarr-${series.id}`;
     const rel = releaseState[releaseKey];
     const hasRejectedState = hasRejectedMap[series.id];
-    const canShowInteractive = series.status === "wanted" && hasRejectedState !== false;
+    const canShowInteractive =
+      series.status === "wanted" &&
+      (hasRejectedState === null || Boolean(hasRejectedState?.hasRejected));
     return (
       <article className="card media-card" key={series.id}>
         <div className="row media-top-row">
@@ -255,6 +263,9 @@ export default function TvPage() {
             </button>
           )}
         </div>
+        {series.status === "wanted" && hasRejectedState && hasRejectedState.hasRejected && (
+          <p className="muted">Rejected releases: {hasRejectedState.rejectedCount}</p>
+        )}
         <DownloadMeta download={series.download} />
 
         {canShowInteractive && (
@@ -280,7 +291,9 @@ export default function TvPage() {
                         </p>
                       </div>
                       <div className="release-side">
-                        <span className="rel-state rel-rejected">Rejected</span>
+                        <span className="rel-state rel-rejected">
+                          {release.rejections?.[0] ? "Reason found" : "Rejected"}
+                        </span>
                         <button
                           type="button"
                           className="action-btn"
@@ -291,11 +304,16 @@ export default function TvPage() {
                         </button>
                       </div>
                       {release.rejections?.length > 0 && (
-                        <ul className="release-reasons">
-                          {release.rejections.map((reason, ridx) => (
-                            <li key={`${release.title}-${ridx}`}>{reason}</li>
-                          ))}
-                        </ul>
+                        <div className="release-reason-box">
+                          <p><strong>Why rejected:</strong> {release.rejections[0]}</p>
+                          {release.rejections.length > 1 && (
+                            <ul className="release-reasons">
+                              {release.rejections.slice(1).map((reason, ridx) => (
+                                <li key={`${release.title}-${ridx}`}>{reason}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
                       )}
                     </article>
                   ))}

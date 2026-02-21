@@ -1037,7 +1037,10 @@ app.get("/api/releases/has-rejected/batch", async (req, res) => {
     for (let i = 0; i < results.length; i += 1) {
       const result = results[i];
       if (result.status === "fulfilled") {
-        items[String(result.value.itemId)] = result.value.hasRejected;
+        items[String(result.value.itemId)] = {
+          hasRejected: result.value.hasRejected,
+          rejectedCount: result.value.rejectedCount || 0
+        };
         if (result.value.hasRejected) rejectedPositive += 1;
         totalReleases += result.value.totalReleases;
       } else {
