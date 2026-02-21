@@ -951,7 +951,10 @@ app.get("/api/releases", async (req, res) => {
 
   try {
     const base = getPrimaryBase(service);
-    const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
+    const endpoint =
+      service === "radarr"
+        ? `${base}/release?movieId=${itemId}&includeRejected=true`
+        : `${base}/release?seriesId=${itemId}&includeRejected=true`;
     const payload = await requestArrWithFallback(service, [endpoint], { timeoutMs: 60000 });
     const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
     records.sort((a, b) => {
@@ -979,7 +982,10 @@ app.get("/api/releases/has-rejected", async (req, res) => {
 
   try {
     const base = getPrimaryBase(service);
-    const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
+    const endpoint =
+      service === "radarr"
+        ? `${base}/release?movieId=${itemId}&includeRejected=true`
+        : `${base}/release?seriesId=${itemId}&includeRejected=true`;
     const payload = await requestArrWithFallback(service, [endpoint], { timeoutMs: 30000 });
     const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
     const rejectedCount = records.filter((entry) => entry.rejected).length;
@@ -1013,7 +1019,10 @@ app.get("/api/releases/has-rejected/batch", async (req, res) => {
     const base = getPrimaryBase(service);
     const concurrency = service === "sonarr" ? 3 : 6;
     const results = await asyncMapLimit(itemIds, concurrency, async (itemId) => {
-        const endpoint = service === "radarr" ? `${base}/release?movieId=${itemId}` : `${base}/release?seriesId=${itemId}`;
+        const endpoint =
+          service === "radarr"
+            ? `${base}/release?movieId=${itemId}&includeRejected=true`
+            : `${base}/release?seriesId=${itemId}&includeRejected=true`;
         const payload = await requestArrWithFallback(service, [endpoint], { timeoutMs: 30000 });
         const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
         const rejectedCount = records.filter((entry) => entry.rejected).length;
