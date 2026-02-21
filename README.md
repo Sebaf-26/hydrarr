@@ -31,6 +31,7 @@ Then open `http://localhost:3000`.
 3. Compose path: `docker-compose.yml`
 4. Define environment variables from `.env.example` in the Env section.
 5. Deploy stack.
+6. For API test output, check container logs of `hydrarr-test` (it calls `/api/debug/rejected-sample` automatically).
 
 ### Portainer Env example
 

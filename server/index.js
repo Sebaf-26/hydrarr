@@ -388,6 +388,63 @@ async function hasRejectedReleases(service, itemId) {
   return records.some((entry) => entry.rejected);
 }
 
+async function batchRejectedCheck(service, itemIds) {
+  const base = getPrimaryBase(service);
+  const concurrency = service === "sonarr" ? 3 : 6;
+  const startedAt = Date.now();
+
+  const results = await asyncMapLimit(itemIds, concurrency, async (itemId) => {
+    const endpoint =
+      service === "radarr"
+        ? `${base}/release?movieId=${itemId}&includeRejected=true`
+        : `${base}/release?seriesId=${itemId}&includeRejected=true`;
+    const payload = await requestArrWithFallback(service, [endpoint], { timeoutMs: 30000 });
+    const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
+    const rejectedCount = records.filter((entry) => entry.rejected).length;
+    return { itemId, hasRejected: rejectedCount > 0, rejectedCount, totalReleases: records.length };
+  });
+
+  const items = {};
+  let failed = 0;
+  let rejectedPositive = 0;
+  let totalReleases = 0;
+  const failedIds = [];
+
+  for (let i = 0; i < results.length; i += 1) {
+    const result = results[i];
+    if (result.status === "fulfilled") {
+      items[String(result.value.itemId)] = {
+        hasRejected: result.value.hasRejected,
+        rejectedCount: result.value.rejectedCount || 0
+      };
+      if (result.value.hasRejected) rejectedPositive += 1;
+      totalReleases += result.value.totalReleases;
+    } else {
+      failed += 1;
+      const id = itemIds[i];
+      if (Number.isFinite(id)) {
+        items[String(id)] = null;
+        failedIds.push(id);
+      }
+    }
+  }
+
+  return {
+    items,
+    failedIds,
+    metrics: {
+      service,
+      total: itemIds.length,
+      ok: itemIds.length - failed,
+      failed,
+      rejectedPositive,
+      totalReleases,
+      concurrency,
+      elapsedMs: Date.now() - startedAt
+    }
+  };
+}
+
 async function qbtLogin() {
   if (!QBT_CONFIG.url || !QBT_CONFIG.username || !QBT_CONFIG.password) {
     return "";
@@ -1014,58 +1071,48 @@ app.get("/api/releases/has-rejected/batch", async (req, res) => {
   }
 
   try {
-    const startedAt = Date.now();
     addHydrarrLog("info", "Batch rejected check started", { service, count: itemIds.length });
-    const base = getPrimaryBase(service);
-    const concurrency = service === "sonarr" ? 3 : 6;
-    const results = await asyncMapLimit(itemIds, concurrency, async (itemId) => {
-        const endpoint =
-          service === "radarr"
-            ? `${base}/release?movieId=${itemId}&includeRejected=true`
-            : `${base}/release?seriesId=${itemId}&includeRejected=true`;
-        const payload = await requestArrWithFallback(service, [endpoint], { timeoutMs: 30000 });
-        const records = extractRecords(payload).map((entry) => normalizeRelease(service, entry));
-        const rejectedCount = records.filter((entry) => entry.rejected).length;
-        return { itemId, hasRejected: rejectedCount > 0, rejectedCount, totalReleases: records.length };
-      });
-
-    const items = {};
-    let failed = 0;
-    let rejectedPositive = 0;
-    let totalReleases = 0;
-    const failedIds = [];
-    for (let i = 0; i < results.length; i += 1) {
-      const result = results[i];
-      if (result.status === "fulfilled") {
-        items[String(result.value.itemId)] = {
-          hasRejected: result.value.hasRejected,
-          rejectedCount: result.value.rejectedCount || 0
-        };
-        if (result.value.hasRejected) rejectedPositive += 1;
-        totalReleases += result.value.totalReleases;
-      } else {
-        failed += 1;
-        const id = itemIds[i];
-        if (Number.isFinite(id)) {
-          items[String(id)] = null;
-          failedIds.push(id);
-        }
-      }
-    }
+    const result = await batchRejectedCheck(service, itemIds);
     addHydrarrLog("info", "Batch rejected check completed", {
-      service,
-      total: itemIds.length,
-      ok: itemIds.length - failed,
-      failed,
-      rejectedPositive,
-      totalReleases,
-      concurrency,
-      elapsedMs: Date.now() - startedAt
+      ...result.metrics
     });
-    return res.json({ configured: true, items, failedIds });
+    return res.json({ configured: true, items: result.items, failedIds: result.failedIds, metrics: result.metrics });
   } catch (err) {
     addHydrarrLog("error", "Batch rejected check failed", { service, error: err.message });
     return res.status(502).json({ error: err.message || "Failed batch rejected check" });
+  }
+});
+
+app.get("/api/debug/rejected-sample", async (_, res) => {
+  const output = {
+    generatedAt: new Date().toISOString(),
+    radarr: { configured: Boolean(configuredServices.radarr) },
+    sonarr: { configured: Boolean(configuredServices.sonarr) }
+  };
+
+  try {
+    if (configuredServices.radarr) {
+      const moviePayload = await requestArrWithFallback("radarr", [`${getPrimaryBase("radarr")}/movie`], { timeoutMs: 15000 });
+      const movieIds = extractRecords(moviePayload).slice(0, 20).map((item) => item.id).filter(Number.isFinite);
+      const batch = await batchRejectedCheck("radarr", movieIds);
+      output.radarr = { configured: true, itemIds: movieIds, ...batch };
+    }
+
+    if (configuredServices.sonarr) {
+      const seriesPayload = await requestArrWithFallback("sonarr", [`${getPrimaryBase("sonarr")}/series`], { timeoutMs: 15000 });
+      const seriesIds = extractRecords(seriesPayload).slice(0, 20).map((item) => item.id).filter(Number.isFinite);
+      const batch = await batchRejectedCheck("sonarr", seriesIds);
+      output.sonarr = { configured: true, itemIds: seriesIds, ...batch };
+    }
+
+    addHydrarrLog("info", "Rejected sample debug generated", {
+      radarrCount: output.radarr.itemIds?.length || 0,
+      sonarrCount: output.sonarr.itemIds?.length || 0
+    });
+    return res.json(output);
+  } catch (err) {
+    addHydrarrLog("error", "Rejected sample debug failed", { error: err.message });
+    return res.status(502).json({ error: err.message || "Failed to generate debug sample", partial: output });
   }
 });
 
