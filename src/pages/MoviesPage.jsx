@@ -140,6 +140,11 @@ export default function MoviesPage() {
     }
   }
 
+  function metaValue(value, fallback = "-") {
+    if (value === null || value === undefined || value === "") return fallback;
+    return String(value);
+  }
+
   function renderWantedMovie(movie) {
     const key = `radarr-${movie.id}`;
     const rel = releaseState[key];
@@ -169,25 +174,6 @@ export default function MoviesPage() {
             </div>
           </div>
         )}
-        {Array.isArray(movie.downloadItems) && movie.downloadItems.length > 0 && (
-          <div className="download-list">
-            {movie.downloadItems.map((item, idx) => (
-              <article className="download-item" key={`${item.hash || item.name}-${idx}`}>
-                <div className="download-item-head">
-                  <strong>{item.name}</strong>
-                  {typeof item.progressPct === "number" && <span>{item.progressPct.toFixed(1)}%</span>}
-                </div>
-                <div className="download-item-meta">
-                  <span>ETA: {formatEta(item.etaSeconds)}</span>
-                  <span>Peers: {item.peers ?? "-"}</span>
-                  <span>GB: {item.sizeGb ?? "-"}</span>
-                  <span>Stalled: {item.isStalled ? "Yes" : "No"}</span>
-                  {item.isStalled && <span>Stalled For: {formatDuration(item.stalledSeconds)}</span>}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
         {canShowInteractive && (
           <>
             {rel?.open && (
@@ -204,16 +190,34 @@ export default function MoviesPage() {
                     <article className="release-item" key={`${release.guid || release.title}-${idx}`}>
                       <div className="release-main">
                         <h4>{release.title}</h4>
-                        <p className="muted">
-                          {release.indexer} | {release.sizeGb ? `${release.sizeGb} GB` : "-"} | Peers{" "}
-                          {release.seeders ?? "-"} / {release.leechers ?? "-"} | {release.language || "-"} |{" "}
-                          {release.quality || "-"}
-                        </p>
+                        <div className="release-meta-grid">
+                          <div className="release-meta-row">
+                            <span className="release-meta-label">Indexer</span>
+                            <span className="release-meta-pill">{metaValue(release.indexer)}</span>
+                          </div>
+                          <div className="release-meta-row">
+                            <span className="release-meta-label">Size</span>
+                            <span className="release-meta-pill">
+                              {release.sizeGb ? `${release.sizeGb} GB` : "-"}
+                            </span>
+                          </div>
+                          <div className="release-meta-row">
+                            <span className="release-meta-label">Peers</span>
+                            <span className="release-meta-pill">
+                              {metaValue(release.seeders)} / {metaValue(release.leechers)}
+                            </span>
+                          </div>
+                          <div className="release-meta-row">
+                            <span className="release-meta-label">Language</span>
+                            <span className="release-meta-pill">{metaValue(release.language)}</span>
+                          </div>
+                          <div className="release-meta-row">
+                            <span className="release-meta-label">Quality</span>
+                            <span className="release-meta-pill">{metaValue(release.quality)}</span>
+                          </div>
+                        </div>
                       </div>
                       <div className="release-side">
-                        <span className="rel-state rel-rejected">
-                          {release.rejections?.[0] ? "Reason found" : "Rejected"}
-                        </span>
                         <button
                           type="button"
                           className="action-btn"
