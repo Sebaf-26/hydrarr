@@ -511,6 +511,17 @@ body {
   margin: 0;
 }
 
+.grab-success-banner {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(109, 255, 149, 0.55);
+  background: rgba(109, 255, 149, 0.2);
+  color: #caffd7;
+  font-size: 16px;
+  font-weight: 700;
+}
+
 .filters label {
   display: flex;
   flex-direction: column;

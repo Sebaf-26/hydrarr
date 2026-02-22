@@ -116,9 +116,16 @@ export default function MoviesPage() {
   }
 
   async function grabRelease(release, key) {
+    const selectedId = release.guid || release.downloadUrl || release.title;
     setReleaseState((prev) => ({
       ...prev,
-      [key]: { ...(prev[key] || {}), grabbing: true, grabError: "", grabMessage: "" }
+      [key]: {
+        ...(prev[key] || {}),
+        grabbing: true,
+        grabbingReleaseId: selectedId,
+        grabError: "",
+        grabMessage: ""
+      }
     }));
     try {
       const res = await fetch("/api/releases/grab", {
@@ -130,12 +137,27 @@ export default function MoviesPage() {
       if (!res.ok) throw new Error(json.error || "Grab failed");
       setReleaseState((prev) => ({
         ...prev,
-        [key]: { ...(prev[key] || {}), grabbing: false, grabError: "", grabMessage: "Release sent." }
+        [key]: {
+          ...(prev[key] || {}),
+          grabbing: false,
+          grabbingReleaseId: selectedId,
+          grabError: "",
+          grabMessage: "Release sent to download client. Refreshing..."
+        }
       }));
+      setTimeout(() => {
+        window.location.reload();
+      }, 1600);
     } catch (err) {
       setReleaseState((prev) => ({
         ...prev,
-        [key]: { ...(prev[key] || {}), grabbing: false, grabError: err.message, grabMessage: "" }
+        [key]: {
+          ...(prev[key] || {}),
+          grabbing: false,
+          grabbingReleaseId: null,
+          grabError: err.message,
+          grabMessage: ""
+        }
       }));
     }
   }
@@ -149,6 +171,13 @@ export default function MoviesPage() {
     const key = `radarr-${movie.id}`;
     const rel = releaseState[key];
     const canShowInteractive = movie.status === "wanted";
+    const filteredReleases = Array.isArray(rel?.items)
+      ? rel.items.filter((release) => {
+          if (!rel?.grabbingReleaseId) return true;
+          const releaseId = release.guid || release.downloadUrl || release.title;
+          return releaseId === rel.grabbingReleaseId;
+        })
+      : [];
     return (
       <article className="card media-card" key={movie.id}>
         <div className="row media-top-row">
@@ -180,13 +209,13 @@ export default function MoviesPage() {
               <div className="release-list">
                 {rel.loading && <p className="muted">Loading rejected releases...</p>}
                 {rel.error && <p className="error">{rel.error}</p>}
-                {rel.grabMessage && <p className="muted">{rel.grabMessage}</p>}
+                {rel.grabMessage && <p className="grab-success-banner">{rel.grabMessage}</p>}
                 {rel.grabError && <p className="error">{rel.grabError}</p>}
                 {!rel.loading && !rel.error && rel.loaded && rel.items.length === 0 && (
                   <p className="muted">No rejected releases found.</p>
                 )}
                 {!rel.loading &&
-                  rel.items?.map((release, idx) => (
+                  filteredReleases.map((release, idx) => (
                     <article className="release-item" key={`${release.guid || release.title}-${idx}`}>
                       <div className="release-main">
                         <h4>{release.title}</h4>
