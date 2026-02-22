@@ -26,17 +26,3 @@ services:
       QBITTORRENT_URL: ${QBITTORRENT_URL:-}
       QBITTORRENT_USERNAME: ${QBITTORRENT_USERNAME:-}
       QBITTORRENT_PASSWORD: ${QBITTORRENT_PASSWORD:-}
-
-  hydrarr-test:
-    image: curlimages/curl:8.8.0
-    container_name: hydrarr-test
-    depends_on:
-      - hydrarr
-    restart: "no"
-    command:
-      - sh
-      - -c
-      - |
-        echo "Running Hydrarr rejected-sample test..."
-        sleep 5
-        curl -sS "http://hydrarr:${PORT:-3000}/api/debug/rejected-sample"
