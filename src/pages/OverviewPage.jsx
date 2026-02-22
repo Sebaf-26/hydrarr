@@ -52,6 +52,11 @@ export default function OverviewPage() {
               Configured: {item.configured ? "Yes" : "No"}
               {item.version ? ` | Version: ${item.version}` : ""}
             </p>
+            {item.configured && item.url && (
+              <a className="action-btn" href={item.url} target="_blank" rel="noreferrer">
+                Open app
+              </a>
+            )}
           </article>
           ))}
       </div>

@@ -691,7 +691,8 @@ app.get("/api/overview", async (_, res) => {
           status: qbt.status,
           version: qbt.version || undefined,
           appName: "qBittorrent",
-          message: qbt.message
+          message: qbt.message,
+          url: qbt.configured ? normalizeUrl(QBT_CONFIG.url) : ""
         };
       }
 
@@ -701,7 +702,8 @@ app.get("/api/overview", async (_, res) => {
           service,
           configured: false,
           status: "not_configured",
-          message: "Not configured"
+          message: "Not configured",
+          url: ""
         };
       }
 
@@ -713,14 +715,16 @@ app.get("/api/overview", async (_, res) => {
           status: "online",
           version: status.version || "unknown",
           appName: status.appName || service,
-          message: `Connected (${cfg.url})`
+          message: `Connected (${cfg.url})`,
+          url: normalizeUrl(cfg.url)
         };
       } catch (err) {
         return {
           service,
           configured: true,
           status: "offline",
-          message: `${err.message || "Connection failed"} (${cfg.url})`
+          message: `${err.message || "Connection failed"} (${cfg.url})`,
+          url: normalizeUrl(cfg.url)
         };
       }
     })

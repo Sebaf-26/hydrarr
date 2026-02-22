@@ -52,7 +52,6 @@ function AvailableMovieCard({ movie }) {
 export default function MoviesPage() {
   const [state, setState] = useState({ loading: true, error: "", wanted: [], available: [] });
   const [releaseState, setReleaseState] = useState({});
-  const [hasRejectedMap, setHasRejectedMap] = useState({});
 
   useEffect(() => {
     let active = true;
@@ -86,41 +85,6 @@ export default function MoviesPage() {
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    const targets = state.wanted.filter((movie) => movie.status === "wanted");
-    if (!targets.length) {
-      setHasRejectedMap({});
-      return;
-    }
-
-    let active = true;
-    const itemIds = targets.map((movie) => movie.id).join(",");
-    apiFetch(`/api/releases/has-rejected/batch?service=radarr&itemIds=${itemIds}`)
-      .then((json) => {
-        if (!active) return;
-        const payload = json.items || {};
-        const next = {};
-        for (const movie of targets) {
-          const raw = payload[String(movie.id)];
-          next[movie.id] =
-            raw === null
-              ? null
-              : {
-                  hasRejected: Boolean(raw?.hasRejected),
-                  rejectedCount: Number(raw?.rejectedCount || 0)
-                };
-        }
-        setHasRejectedMap(next);
-      })
-      .catch(() => {
-        if (active) setHasRejectedMap({});
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [state.wanted]);
 
   function toggleInteractive(itemId) {
     const key = `radarr-${itemId}`;
@@ -179,10 +143,7 @@ export default function MoviesPage() {
   function renderWantedMovie(movie) {
     const key = `radarr-${movie.id}`;
     const rel = releaseState[key];
-    const hasRejectedState = hasRejectedMap[movie.id];
-    const canShowInteractive =
-      movie.status === "wanted" &&
-      (hasRejectedState === null || Boolean(hasRejectedState?.hasRejected));
+    const canShowInteractive = movie.status === "wanted";
     return (
       <article className="card media-card" key={movie.id}>
         <div className="row media-top-row">
@@ -196,9 +157,6 @@ export default function MoviesPage() {
             </button>
           )}
         </div>
-        {movie.status === "wanted" && hasRejectedState && hasRejectedState.hasRejected && (
-          <p className="muted">Rejected releases: {hasRejectedState.rejectedCount}</p>
-        )}
         {movie.download && (
           <div className="download-stats-wrap">
             <ProgressRing value={movie.download.progressPct} />

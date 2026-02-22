@@ -70,7 +70,6 @@ export default function TvPage() {
   const [openSeries, setOpenSeries] = useState({});
   const [seasonState, setSeasonState] = useState({});
   const [releaseState, setReleaseState] = useState({});
-  const [hasRejectedMap, setHasRejectedMap] = useState({});
 
   useEffect(() => {
     let active = true;
@@ -103,41 +102,6 @@ export default function TvPage() {
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    const targets = state.wanted.filter((series) => series.status === "wanted");
-    if (!targets.length) {
-      setHasRejectedMap({});
-      return;
-    }
-
-    let active = true;
-    const itemIds = targets.map((series) => series.id).join(",");
-    apiFetch(`/api/releases/has-rejected/batch?service=sonarr&itemIds=${itemIds}`)
-      .then((json) => {
-        if (!active) return;
-        const payload = json.items || {};
-        const next = {};
-        for (const series of targets) {
-          const raw = payload[String(series.id)];
-          next[series.id] =
-            raw === null
-              ? null
-              : {
-                  hasRejected: Boolean(raw?.hasRejected),
-                  rejectedCount: Number(raw?.rejectedCount || 0)
-                };
-        }
-        setHasRejectedMap(next);
-      })
-      .catch(() => {
-        if (active) setHasRejectedMap({});
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [state.wanted]);
 
   function toggleSeries(seriesId) {
     setOpenSeries((prev) => ({ ...prev, [seriesId]: !prev[seriesId] }));
@@ -239,10 +203,7 @@ export default function TvPage() {
   function renderSeriesCard(series) {
     const releaseKey = `sonarr-${series.id}`;
     const rel = releaseState[releaseKey];
-    const hasRejectedState = hasRejectedMap[series.id];
-    const canShowInteractive =
-      series.status === "wanted" &&
-      (hasRejectedState === null || Boolean(hasRejectedState?.hasRejected));
+    const canShowInteractive = series.status === "wanted";
     return (
       <article className="card media-card" key={series.id}>
         <div className="row media-top-row">
@@ -263,9 +224,6 @@ export default function TvPage() {
             </button>
           )}
         </div>
-        {series.status === "wanted" && hasRejectedState && hasRejectedState.hasRejected && (
-          <p className="muted">Rejected releases: {hasRejectedState.rejectedCount}</p>
-        )}
         <DownloadMeta download={series.download} />
 
         {canShowInteractive && (
