@@ -41,6 +41,7 @@ const QBT_CONFIG = {
 const QBT_TIMEOUT_MS = Number(process.env.QBITTORRENT_TIMEOUT_MS || 8000);
 const ARR_TIMEOUT_MS = Number(process.env.ARR_TIMEOUT_MS || 20000);
 const ARR_LOG_TIMEOUT_MS = Number(process.env.ARR_LOG_TIMEOUT_MS || Math.max(ARR_TIMEOUT_MS, 30000));
+const ARR_PING_TIMEOUT_MS = Number(process.env.ARR_PING_TIMEOUT_MS || 5000);
 const HYDRARR_LOG_LIMIT = 1000;
 const hydrarrLogs = [];
 
@@ -173,6 +174,27 @@ async function requestArrWithFallback(serviceName, endpoints, options = {}) {
     }
   }
   throw lastError || new Error(`${serviceName}: no endpoint available`);
+}
+
+async function probeArrService(serviceName) {
+  const service = configuredServices[serviceName];
+  if (!service) return false;
+
+  const baseUrl = normalizeUrl(service.url);
+  const baseApi = getPrimaryBase(serviceName);
+  const endpoints = [`${baseApi}/ping`, "/ping", "/"];
+  const headers = { "X-Api-Key": service.apiKey };
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetchWithTimeout(`${baseUrl}${endpoint}`, { headers }, ARR_PING_TIMEOUT_MS);
+      if (res.ok) return true;
+    } catch {
+      // Ignore and try next lightweight endpoint.
+    }
+  }
+
+  return false;
 }
 
 async function asyncMapLimit(items, limit, mapper) {
@@ -759,6 +781,21 @@ app.get("/api/overview", async (_, res) => {
           url: normalizeUrl(cfg.url)
         };
       } catch (err) {
+        const timedOut = String(err?.message || "").toLowerCase().includes("request timeout");
+        if (timedOut) {
+          const reachable = await probeArrService(service);
+          if (reachable) {
+            return {
+              service,
+              configured: true,
+              status: "online",
+              version: "unknown",
+              appName: service,
+              message: `Connected (status endpoint timeout) (${cfg.url})`,
+              url: normalizeUrl(cfg.url)
+            };
+          }
+        }
         return {
           service,
           configured: true,
