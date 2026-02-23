@@ -31,12 +31,26 @@ function DownloadingMovieRow({ movie }) {
         <span className="movie-download-year">{movie.year || "-"}</span>
       </div>
       <div className="movie-download-pills">
-        <span className="movie-meta-pill">ETA {formatEta(movie.download.etaSeconds)}</span>
-        <span className="movie-meta-pill">Peers {movie.download.peers ?? "-"}</span>
-        <span className="movie-meta-pill">GB {movie.download.sizeGb ?? "-"}</span>
-        <span className="movie-meta-pill">
-          Stalled {movie.download.isStalled ? `Yes ${formatDuration(movie.download.stalledSeconds)}` : "No"}
-        </span>
+        <div className="movie-meta-item">
+          <span className="movie-meta-label">ETA</span>
+          <span className="movie-meta-pill">{formatEta(movie.download.etaSeconds)}</span>
+        </div>
+        <div className="movie-meta-item">
+          <span className="movie-meta-label">Peers</span>
+          <span className="movie-meta-pill">{movie.download.peers ?? "-"}</span>
+        </div>
+        <div className="movie-meta-item">
+          <span className="movie-meta-label">GB</span>
+          <span className="movie-meta-pill">{movie.download.sizeGb ?? "-"}</span>
+        </div>
+        {movie.download.isStalled && (
+          <div className="movie-meta-item">
+            <span className="movie-meta-label">State</span>
+            <span className="movie-meta-pill movie-meta-pill-stalled">
+              {`Stalled ${formatDuration(movie.download.stalledSeconds)}`}
+            </span>
+          </div>
+        )}
       </div>
       <div className="movie-download-progress-wrap">
         <div className="movie-download-progress">

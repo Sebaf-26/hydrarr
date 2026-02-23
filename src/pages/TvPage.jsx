@@ -5,16 +5,6 @@ function StatusPill({ status }) {
   return <span className={`media-state media-state-${status}`}>{status}</span>;
 }
 
-function ProgressRing({ value }) {
-  const pct = Math.max(0, Math.min(100, Number(value || 0)));
-  const deg = pct * 3.6;
-  return (
-    <div className="progress-ring" style={{ "--p": `${deg}deg` }}>
-      <div className="progress-ring-inner">{pct.toFixed(1)}%</div>
-    </div>
-  );
-}
-
 function formatEta(seconds) {
   if (!seconds || seconds <= 0) return "-";
   const h = Math.floor(seconds / 3600);
@@ -31,19 +21,45 @@ function formatDuration(seconds) {
   return `${m}m`;
 }
 
-function DownloadMeta({ download }) {
-  if (!download) return null;
+function DownloadingSeriesRow({ series }) {
+  if (!series.download) return null;
+  const progressPct = Math.max(0, Math.min(100, Number(series.download.progressPct || 0)));
   return (
-    <div className="download-stats-wrap">
-      <ProgressRing value={download.progressPct} />
-      <div className="download-stats">
-        <span>ETA: {formatEta(download.etaSeconds)}</span>
-        <span>Peers: {download.peers}</span>
-        <span>GB: {download.sizeGb}</span>
-        <span>Stalled: {download.isStalled ? "Yes" : "No"}</span>
-        {download.isStalled && <span>Stalled For: {formatDuration(download.stalledSeconds)}</span>}
+    <article className="series-download-row" key={series.id}>
+      <div className="movie-download-title-wrap">
+        <h4 className="movie-download-title">{series.title}</h4>
+        <span className="movie-download-year">{series.year || "-"}</span>
       </div>
-    </div>
+      <div className="movie-download-pills">
+        <div className="movie-meta-item">
+          <span className="movie-meta-label">ETA</span>
+          <span className="movie-meta-pill">{formatEta(series.download.etaSeconds)}</span>
+        </div>
+        <div className="movie-meta-item">
+          <span className="movie-meta-label">Peers</span>
+          <span className="movie-meta-pill">{series.download.peers ?? "-"}</span>
+        </div>
+        <div className="movie-meta-item">
+          <span className="movie-meta-label">GB</span>
+          <span className="movie-meta-pill">{series.download.sizeGb ?? "-"}</span>
+        </div>
+        {series.download.isStalled && (
+          <div className="movie-meta-item">
+            <span className="movie-meta-label">State</span>
+            <span className="movie-meta-pill movie-meta-pill-stalled">
+              {`Stalled ${formatDuration(series.download.stalledSeconds)}`}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="movie-download-progress-wrap">
+        <div className="movie-download-progress">
+          <div className="movie-download-progress-bar" style={{ width: `${progressPct}%` }}>
+            <span className="movie-download-progress-text">{progressPct.toFixed(1)}%</span>
+          </div>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -70,6 +86,8 @@ export default function TvPage() {
   const [openSeries, setOpenSeries] = useState({});
   const [seasonState, setSeasonState] = useState({});
   const [releaseState, setReleaseState] = useState({});
+  const downloadingSeries = state.wanted.filter((series) => series.status === "downloading" && series.download);
+  const wantedSeries = state.wanted.filter((series) => series.status !== "downloading" || !series.download);
 
   useEffect(() => {
     let active = true;
@@ -224,7 +242,6 @@ export default function TvPage() {
             </button>
           )}
         </div>
-        <DownloadMeta download={series.download} />
 
         {canShowInteractive && (
           <>
@@ -366,9 +383,17 @@ export default function TvPage() {
 
       {!state.loading && !state.error && (
         <>
-          <h3 className="section-title">Wanted/Downloading</h3>
-          <div className="two-col-grid">{state.wanted.map(renderSeriesCard)}</div>
-          {state.wanted.length === 0 && <p className="muted">No wanted or downloading series.</p>}
+          <h3 className="section-title">Downloading</h3>
+          <div className="movie-download-list">
+            {downloadingSeries.map((series) => (
+              <DownloadingSeriesRow key={series.id} series={series} />
+            ))}
+          </div>
+          {downloadingSeries.length === 0 && <p className="muted">No downloading series.</p>}
+
+          <h3 className="section-title">Wanted</h3>
+          <div className="two-col-grid">{wantedSeries.map(renderSeriesCard)}</div>
+          {wantedSeries.length === 0 && <p className="muted">No wanted series.</p>}
 
           <h3 className="section-title">Available</h3>
           <div className="available-strip">
