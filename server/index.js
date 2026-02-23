@@ -841,6 +841,20 @@ app.get("/api/overview", async (_, res) => {
       }
 
       try {
+        if (service === "sonarr") {
+          const reachable = await probeArrService(service);
+          addHydrarrLog("info", "Sonarr overview preflight probe", { reachable });
+          if (!reachable) {
+            return {
+              service,
+              configured: true,
+              status: "offline",
+              message: `sonarr: probe failed (${cfg.url})`,
+              url: normalizeUrl(cfg.url)
+            };
+          }
+        }
+
         const status = await requestArrWithFallback(service, getStatusEndpoints(service));
         return {
           service,
