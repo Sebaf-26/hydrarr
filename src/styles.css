@@ -138,6 +138,33 @@ body {
   margin-top: 8px;
 }
 
+.music-native-wrap {
+  margin-top: 8px;
+  display: grid;
+  gap: 12px;
+}
+
+.music-native-wrap select {
+  min-width: 280px;
+}
+
+.music-native-wrap input[type="file"] {
+  margin: 8px 0;
+}
+
+.music-preview-grid {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px;
+}
+
 .music-plex-panel {
   border: 1px solid rgba(84, 142, 233, 0.28);
   border-radius: 14px;

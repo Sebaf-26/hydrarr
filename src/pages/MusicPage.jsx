@@ -2,10 +2,31 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../lib";
 import ServiceBadge from "../components/ServiceBadge";
 
+async function readJsonSafe(res) {
+  const text = await res.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text };
+  }
+}
+
 export default function MusicPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [overview, setOverview] = useState({ loading: true, error: "", data: [] });
-  const [plex, setPlex] = useState({ loading: true, error: "", configured: false, url: "", port: 8090 });
+  const [plexCfg, setPlexCfg] = useState({ loading: true, error: "", configured: false });
+  const [plexToken, setPlexToken] = useState("");
+  const [uploadId, setUploadId] = useState("");
+  const [playlists, setPlaylists] = useState([]);
+  const [playlistId, setPlaylistId] = useState("");
+  const [uploadMsg, setUploadMsg] = useState("");
+  const [authMsg, setAuthMsg] = useState("");
+  const [previewMsg, setPreviewMsg] = useState("");
+  const [resultMsg, setResultMsg] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [confirm, setConfirm] = useState(false);
+  const [file, setFile] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -26,28 +47,140 @@ export default function MusicPage() {
 
   useEffect(() => {
     let active = true;
-    setPlex({ loading: true, error: "", configured: false, url: "" });
-
+    setPlexCfg({ loading: true, error: "", configured: false });
     apiFetch("/api/integrations/plex-playlist-reorder")
       .then((json) => {
         if (!active) return;
-        setPlex({
-          loading: false,
-          error: "",
-          configured: Boolean(json.configured),
-          url: json.url || "",
-          port: Number(json.port || 8090)
-        });
+        setPlexCfg({ loading: false, error: "", configured: Boolean(json.plexConfigured) });
       })
       .catch((err) => {
         if (!active) return;
-        setPlex({ loading: false, error: err.message, configured: false, url: "", port: 8090 });
+        setPlexCfg({ loading: false, error: err.message, configured: false });
       });
-
     return () => {
       active = false;
     };
   }, []);
+
+  async function loadPlaylists(tokenArg = plexToken) {
+    const res = await fetch("/api/plex-reorder/api/playlists", {
+      headers: tokenArg ? { "X-Plex-Token": tokenArg } : {}
+    });
+    const json = await readJsonSafe(res);
+    if (!res.ok) throw new Error(json.error || "Failed to load playlists");
+    const items = Array.isArray(json.playlists) ? json.playlists : [];
+    setPlaylists(items);
+  }
+
+  async function startPlexLogin() {
+    setAuthMsg("Opening Plex login...");
+    try {
+      const res = await fetch("/api/plex-reorder/api/auth/plex/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ forwardUrl: `${window.location.origin}/api/plex-reorder/auth/plex/callback` })
+      });
+      const json = await readJsonSafe(res);
+      if (!res.ok) throw new Error(json.error || "Failed to start Plex OAuth");
+
+      const popup = window.open(json.authUrl, "plex-oauth-login", "width=520,height=760");
+      if (!popup) throw new Error("Popup blocked. Enable popups and retry.");
+      setAuthMsg("Complete login in popup...");
+
+      for (let i = 0; i < 120; i += 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const statusRes = await fetch(
+          `/api/plex-reorder/api/auth/plex/status?sessionId=${encodeURIComponent(json.sessionId)}`
+        );
+        const statusJson = await readJsonSafe(statusRes);
+        if (!statusRes.ok) throw new Error(statusJson.error || "OAuth check failed");
+        if (statusJson.loggedIn) {
+          setPlexToken(statusJson.plexToken || "");
+          setAuthMsg("Plex login completed.");
+          await loadPlaylists(statusJson.plexToken || "");
+          return;
+        }
+      }
+      throw new Error("Plex login timed out.");
+    } catch (err) {
+      setAuthMsg(err.message);
+    }
+  }
+
+  async function uploadFile() {
+    if (!file) {
+      setUploadMsg("Select a file first.");
+      return;
+    }
+    setUploadMsg("Uploading...");
+    setPreview(null);
+    setPreviewMsg("");
+    setResultMsg("");
+
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("/api/plex-reorder/api/upload", { method: "POST", body: form });
+    const json = await readJsonSafe(res);
+    if (!res.ok) {
+      setUploadMsg(json.error || "Upload failed");
+      return;
+    }
+    setUploadId(json.uploadId || "");
+    setUploadMsg(`Upload complete: ${json.tracks || 0} tracks parsed.`);
+  }
+
+  async function previewOrder() {
+    if (!uploadId) {
+      setPreviewMsg("Upload your Apple Music file first.");
+      return;
+    }
+    if (!playlistId) {
+      setPreviewMsg("Please select a Plex playlist.");
+      return;
+    }
+    setPreviewMsg("Loading preview...");
+    const headers = { "Content-Type": "application/json" };
+    if (plexToken) headers["X-Plex-Token"] = plexToken;
+    const res = await fetch("/api/plex-reorder/api/preview", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ uploadId, playlistId })
+    });
+    const json = await readJsonSafe(res);
+    if (!res.ok) {
+      setPreviewMsg(json.error || "Preview failed");
+      return;
+    }
+    setPreview(json);
+    setPreviewMsg("");
+  }
+
+  async function applyReorder() {
+    if (!uploadId || !playlistId) {
+      setResultMsg("Missing upload or selected playlist.");
+      return;
+    }
+    if (!confirm) {
+      setResultMsg("Please confirm before apply.");
+      return;
+    }
+    setResultMsg("Applying reorder...");
+    const headers = { "Content-Type": "application/json" };
+    if (plexToken) headers["X-Plex-Token"] = plexToken;
+    const res = await fetch("/api/plex-reorder/api/reorder", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ uploadId, playlistId, confirm: true })
+    });
+    const json = await readJsonSafe(res);
+    if (!res.ok) {
+      setResultMsg(json.error || "Reorder failed");
+      return;
+    }
+    setResultMsg(
+      `Reorder completed: ${json.playlistTitle}. Ordered: ${json.ordered}, matches: ${json.matches}, missing: ${json.missing}`
+    );
+  }
 
   return (
     <section>
@@ -89,49 +222,85 @@ export default function MusicPage() {
               </article>
             ))}
           </div>
-
-          {!overview.loading && !overview.error && overview.data.length === 0 && (
-            <p>No configured services returned data for this section.</p>
-          )}
         </>
       )}
 
       {activeTab === "plex-reorder" && (
-        <div className="music-integration-wrap">
-          {plex.loading && <p>Loading Plex Playlist Reorderer integration...</p>}
-          {plex.error && <p className="error">{plex.error}</p>}
-          {!plex.loading && !plex.error && !plex.configured && (
-            <article className="card">
-              <h3>Plex Playlist Reorderer not configured</h3>
-              <p className="muted">
-                Set <code>PLEX_URL</code> to your Plex server URL (example: <code>http://192.168.1.10:32400</code>)
-                and deploy the <code>plex-playlist-reorder</code> service in this stack.
-              </p>
-            </article>
+        <div className="music-native-wrap">
+          {plexCfg.loading && <p>Checking Plex integration...</p>}
+          {plexCfg.error && <p className="error">{plexCfg.error}</p>}
+          {!plexCfg.loading && !plexCfg.error && !plexCfg.configured && (
+            <p className="error">
+              Set <code>PLEX_URL</code> in environment to enable Plex Playlist Reorderer.
+            </p>
           )}
-          {!plex.loading && !plex.error && plex.configured && !plex.url && (
-            <article className="card">
-              <h3>Plex Playlist Reorderer URL not reachable</h3>
-              <p className="muted">
-                Hydrarr could not derive the public URL for the reorder service. Set
-                <code> PLEX_REORDER_PUBLIC_URL</code> or expose service port <code>{plex.port}</code>.
-              </p>
-            </article>
-          )}
-          {!plex.loading && !plex.error && plex.configured && Boolean(plex.url) && (
-            <div className="music-plex-panel">
-              <div className="music-plex-head">
-                <a className="action-btn" href={plex.url} target="_blank" rel="noreferrer">
-                  Open in new tab
-                </a>
-              </div>
-              <iframe
-                className="music-plex-frame"
-                src={plex.url}
-                title="Plex Playlist Reorderer"
-                loading="lazy"
-              />
-            </div>
+          {!plexCfg.loading && !plexCfg.error && plexCfg.configured && (
+            <>
+              <article className="card">
+                <h3>0) Plex Login</h3>
+                <button type="button" className="action-btn" onClick={startPlexLogin}>
+                  Sign in with Plex
+                </button>
+                {authMsg && <p className="muted">{authMsg}</p>}
+              </article>
+
+              <article className="card">
+                <h3>1) Upload Apple Music File</h3>
+                <input
+                  type="file"
+                  accept=".txt,.csv"
+                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                />
+                <div>
+                  <button type="button" className="action-btn" onClick={uploadFile}>
+                    Upload
+                  </button>
+                </div>
+                {uploadMsg && <p className="muted">{uploadMsg}</p>}
+              </article>
+
+              <article className="card">
+                <h3>2) Select Plex Playlist</h3>
+                <div className="row">
+                  <select value={playlistId} onChange={(e) => setPlaylistId(e.target.value)}>
+                    <option value="">Select...</option>
+                    {playlists.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title} ({p.count})
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" className="action-btn" onClick={() => loadPlaylists()}>
+                    Reload Playlists
+                  </button>
+                  <button type="button" className="action-btn" onClick={previewOrder}>
+                    Preview Order
+                  </button>
+                </div>
+                {previewMsg && <p className="muted">{previewMsg}</p>}
+                {preview && (
+                  <div className="music-preview-grid">
+                    <p><strong>Playlist:</strong> {preview.playlistTitle}</p>
+                    <p><strong>Matches:</strong> {preview.matches} / {preview.uploadedCount || 0}</p>
+                    <p><strong>Missing in Plex:</strong> {preview.missingTotal || 0}</p>
+                  </div>
+                )}
+              </article>
+
+              <article className="card">
+                <h3>3) Confirm</h3>
+                <label className="check">
+                  <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} />
+                  Are you sure? Apply reorder now
+                </label>
+                <div>
+                  <button type="button" className="action-btn" onClick={applyReorder}>
+                    Apply Reorder
+                  </button>
+                </div>
+                {resultMsg && <p className="muted">{resultMsg}</p>}
+              </article>
+            </>
           )}
         </div>
       )}

@@ -13,6 +13,7 @@ const distDir = path.join(rootDir, "dist");
 
 const app = express();
 app.use(cors());
+app.use("/api/plex-reorder", plexReorderProxy);
 app.use(express.json());
 
 const SERVICE_SPECS = {
@@ -41,6 +42,7 @@ const QBT_CONFIG = {
 const PLEX_URL = process.env.PLEX_URL || "";
 const PLEX_REORDER_PORT = Number(process.env.PLEX_REORDER_PORT || 8090);
 const PLEX_REORDER_PUBLIC_URL = process.env.PLEX_REORDER_PUBLIC_URL || "";
+const PLEX_REORDER_INTERNAL_URL = process.env.PLEX_REORDER_INTERNAL_URL || "http://plex-playlist-reorder:8080";
 const QBT_TIMEOUT_MS = Number(process.env.QBITTORRENT_TIMEOUT_MS || 8000);
 const ARR_TIMEOUT_MS = Number(process.env.ARR_TIMEOUT_MS || 20000);
 const ARR_LOG_TIMEOUT_MS = Number(process.env.ARR_LOG_TIMEOUT_MS || Math.max(ARR_TIMEOUT_MS, 30000));
@@ -92,6 +94,42 @@ function addHydrarrLog(level, message, details = null) {
   hydrarrLogs.push(line);
   if (hydrarrLogs.length > HYDRARR_LOG_LIMIT) {
     hydrarrLogs.splice(0, hydrarrLogs.length - HYDRARR_LOG_LIMIT);
+  }
+}
+
+async function plexReorderProxy(req, res) {
+  const base = normalizeUrl(PLEX_REORDER_INTERNAL_URL);
+  const pathWithQuery = req.originalUrl.replace(/^\/api\/plex-reorder/, "") || "/";
+  const targetUrl = `${base}${pathWithQuery.startsWith("/") ? "" : "/"}${pathWithQuery}`;
+
+  try {
+    const headers = { ...req.headers };
+    delete headers.host;
+    delete headers.connection;
+    delete headers["content-length"];
+
+    const hasBody = !["GET", "HEAD"].includes(req.method.toUpperCase());
+    const fetchOptions = {
+      method: req.method,
+      headers,
+      redirect: "manual"
+    };
+    if (hasBody) {
+      fetchOptions.body = req;
+      fetchOptions.duplex = "half";
+    }
+
+    const upstream = await fetch(targetUrl, fetchOptions);
+    const bodyBuffer = Buffer.from(await upstream.arrayBuffer());
+
+    res.status(upstream.status);
+    for (const [name, value] of upstream.headers.entries()) {
+      if (name.toLowerCase() === "transfer-encoding") continue;
+      res.setHeader(name, value);
+    }
+    return res.send(bodyBuffer);
+  } catch (err) {
+    return res.status(502).json({ error: `plex-reorder proxy failed: ${err.message || "Unknown error"}` });
   }
 }
 
