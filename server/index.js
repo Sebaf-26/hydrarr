@@ -38,6 +38,7 @@ const QBT_CONFIG = {
   username: process.env.QBITTORRENT_USERNAME || "",
   password: process.env.QBITTORRENT_PASSWORD || ""
 };
+const QBT_TIMEOUT_MS = Number(process.env.QBITTORRENT_TIMEOUT_MS || 8000);
 const HYDRARR_LOG_LIMIT = 1000;
 const hydrarrLogs = [];
 
@@ -85,6 +86,21 @@ function addHydrarrLog(level, message, details = null) {
   hydrarrLogs.push(line);
   if (hydrarrLogs.length > HYDRARR_LOG_LIMIT) {
     hydrarrLogs.splice(0, hydrarrLogs.length - HYDRARR_LOG_LIMIT);
+  }
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`request timeout after ${timeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -454,13 +470,13 @@ async function qbtLogin() {
   form.set("username", QBT_CONFIG.username);
   form.set("password", QBT_CONFIG.password);
 
-  const res = await fetch(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/auth/login`, {
+  const res = await fetchWithTimeout(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/auth/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded"
     },
     body: form.toString()
-  });
+  }, QBT_TIMEOUT_MS);
 
   if (!res.ok) {
     const text = await res.text();
@@ -478,9 +494,9 @@ async function fetchQbtDownloadsByHash() {
 
   const cookie = await qbtLogin();
   const headers = cookie ? { Cookie: cookie } : {};
-  const res = await fetch(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/torrents/info`, {
+  const res = await fetchWithTimeout(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/torrents/info`, {
     headers
-  });
+  }, QBT_TIMEOUT_MS);
 
   if (!res.ok) {
     const text = await res.text();
@@ -507,8 +523,8 @@ async function fetchQbtStatus() {
     const cookie = await qbtLogin();
     const headers = cookie ? { Cookie: cookie } : {};
     const [versionRes, transferRes] = await Promise.all([
-      fetch(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/app/version`, { headers }),
-      fetch(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/transfer/info`, { headers })
+      fetchWithTimeout(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/app/version`, { headers }, QBT_TIMEOUT_MS),
+      fetchWithTimeout(`${normalizeUrl(QBT_CONFIG.url)}/api/v2/transfer/info`, { headers }, QBT_TIMEOUT_MS)
     ]);
 
     if (!versionRes.ok) {
@@ -543,9 +559,10 @@ async function fetchQbtLogs() {
 
   const cookie = await qbtLogin();
   const headers = cookie ? { Cookie: cookie } : {};
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${normalizeUrl(QBT_CONFIG.url)}/api/v2/log/main?normal=true&info=true&warning=true&critical=true&last_known_id=-1`,
-    { headers }
+    { headers },
+    QBT_TIMEOUT_MS
   );
   if (!res.ok) {
     const text = await res.text();
