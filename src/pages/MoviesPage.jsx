@@ -5,16 +5,6 @@ function StatusPill({ status }) {
   return <span className={`media-state media-state-${status}`}>{status}</span>;
 }
 
-function ProgressRing({ value }) {
-  const pct = Math.max(0, Math.min(100, Number(value || 0)));
-  const deg = pct * 3.6;
-  return (
-    <div className="progress-ring" style={{ "--p": `${deg}deg` }}>
-      <div className="progress-ring-inner">{pct.toFixed(1)}%</div>
-    </div>
-  );
-}
-
 function formatEta(seconds) {
   if (!seconds || seconds <= 0) return "-";
   const h = Math.floor(seconds / 3600);
@@ -29,6 +19,34 @@ function formatDuration(seconds) {
   const m = Math.floor((seconds % 3600) / 60);
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
+}
+
+function DownloadingMovieRow({ movie }) {
+  if (!movie.download) return null;
+  const progressPct = Math.max(0, Math.min(100, Number(movie.download.progressPct || 0)));
+  return (
+    <article className="movie-download-row" key={movie.id}>
+      <div className="movie-download-title-wrap">
+        <h4 className="movie-download-title">{movie.title}</h4>
+        <span className="movie-download-year">{movie.year || "-"}</span>
+      </div>
+      <div className="movie-download-pills">
+        <span className="movie-meta-pill">ETA {formatEta(movie.download.etaSeconds)}</span>
+        <span className="movie-meta-pill">Peers {movie.download.peers ?? "-"}</span>
+        <span className="movie-meta-pill">GB {movie.download.sizeGb ?? "-"}</span>
+        <span className="movie-meta-pill">
+          Stalled {movie.download.isStalled ? `Yes ${formatDuration(movie.download.stalledSeconds)}` : "No"}
+        </span>
+      </div>
+      <div className="movie-download-progress-wrap">
+        <div className="movie-download-progress">
+          <div className="movie-download-progress-bar" style={{ width: `${progressPct}%` }}>
+            <span className="movie-download-progress-text">{progressPct.toFixed(1)}%</span>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 function AvailableMovieCard({ movie }) {
@@ -52,6 +70,8 @@ function AvailableMovieCard({ movie }) {
 export default function MoviesPage() {
   const [state, setState] = useState({ loading: true, error: "", wanted: [], available: [] });
   const [releaseState, setReleaseState] = useState({});
+  const downloadingMovies = state.wanted.filter((movie) => movie.status === "downloading" && movie.download);
+  const wantedMovies = state.wanted.filter((movie) => movie.status !== "downloading" || !movie.download);
 
   useEffect(() => {
     let active = true;
@@ -191,18 +211,6 @@ export default function MoviesPage() {
             </button>
           )}
         </div>
-        {movie.download && (
-          <div className="download-stats-wrap">
-            <ProgressRing value={movie.download.progressPct} />
-            <div className="download-stats">
-              <span>ETA: {formatEta(movie.download.etaSeconds)}</span>
-              <span>Peers: {movie.download.peers}</span>
-              <span>GB: {movie.download.sizeGb}</span>
-              <span>Stalled: {movie.download.isStalled ? "Yes" : "No"}</span>
-              {movie.download.isStalled && <span>Stalled For: {formatDuration(movie.download.stalledSeconds)}</span>}
-            </div>
-          </div>
-        )}
         {canShowInteractive && (
           <>
             {rel?.open && (
@@ -289,9 +297,17 @@ export default function MoviesPage() {
 
       {!state.loading && !state.error && (
         <>
-          <h3 className="section-title">Wanted/Downloading</h3>
-          <div className="two-col-grid">{state.wanted.map((movie) => renderWantedMovie(movie))}</div>
-          {state.wanted.length === 0 && <p className="muted">No wanted or downloading movies.</p>}
+          <h3 className="section-title">Downloading</h3>
+          <div className="movie-download-list">
+            {downloadingMovies.map((movie) => (
+              <DownloadingMovieRow key={movie.id} movie={movie} />
+            ))}
+          </div>
+          {downloadingMovies.length === 0 && <p className="muted">No downloading movies.</p>}
+
+          <h3 className="section-title">Wanted</h3>
+          <div className="two-col-grid">{wantedMovies.map((movie) => renderWantedMovie(movie))}</div>
+          {wantedMovies.length === 0 && <p className="muted">No wanted movies.</p>}
 
           <h3 className="section-title">Available</h3>
           <div className="available-strip">
