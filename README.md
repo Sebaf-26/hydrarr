@@ -62,8 +62,15 @@ QBITTORRENT_URL=http://qbittorrent:8080
 QBITTORRENT_USERNAME=admin
 QBITTORRENT_PASSWORD=your_qbittorrent_password
 
-# Optional: embed Plex Playlist Reorderer tab in /music
-PLEX_URL=http://plex-playlist-reorder:8090
+# Optional: PlexPlaylistReorder integration in /music
+# Plex server URL used by plex-playlist-reorder service
+PLEX_URL=http://YOUR_PLEX_IP:32400
+# Host port where plex-playlist-reorder is exposed
+PLEX_REORDER_PORT=8090
+# Optional public URL override (useful behind reverse proxy)
+PLEX_REORDER_PUBLIC_URL=
+# Optional image override for plex-playlist-reorder service
+PLEX_REORDER_IMAGE=ghcr.io/sebaf-26/plex-playlist-reorder:latest
 ```
 
 ## License

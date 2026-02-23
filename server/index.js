@@ -39,6 +39,8 @@ const QBT_CONFIG = {
   password: process.env.QBITTORRENT_PASSWORD || ""
 };
 const PLEX_URL = process.env.PLEX_URL || "";
+const PLEX_REORDER_PORT = Number(process.env.PLEX_REORDER_PORT || 8090);
+const PLEX_REORDER_PUBLIC_URL = process.env.PLEX_REORDER_PUBLIC_URL || "";
 const QBT_TIMEOUT_MS = Number(process.env.QBITTORRENT_TIMEOUT_MS || 8000);
 const ARR_TIMEOUT_MS = Number(process.env.ARR_TIMEOUT_MS || 20000);
 const ARR_LOG_TIMEOUT_MS = Number(process.env.ARR_LOG_TIMEOUT_MS || Math.max(ARR_TIMEOUT_MS, 30000));
@@ -867,11 +869,21 @@ app.get("/api/services", (_, res) => {
   });
 });
 
-app.get("/api/integrations/plex-playlist-reorder", (_, res) => {
-  const url = normalizeUrl(String(PLEX_URL || "").trim());
+app.get("/api/integrations/plex-playlist-reorder", (req, res) => {
+  const explicitPublicUrl = normalizeUrl(String(PLEX_REORDER_PUBLIC_URL || "").trim());
+  const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
+  const reqHost = forwardedHost || String(req.get("host") || "").trim();
+  const hostName = reqHost ? reqHost.split(":")[0] : "";
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const proto = forwardedProto || req.protocol || "http";
+  const derivedPublicUrl = hostName ? `${proto}://${hostName}:${PLEX_REORDER_PORT}` : "";
+  const url = explicitPublicUrl || derivedPublicUrl;
+
   res.json({
-    configured: Boolean(url),
-    url
+    configured: Boolean(PLEX_URL),
+    url: normalizeUrl(url),
+    plexConfigured: Boolean(PLEX_URL),
+    port: PLEX_REORDER_PORT
   });
 });
 

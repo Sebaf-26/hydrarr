@@ -5,7 +5,7 @@ import ServiceBadge from "../components/ServiceBadge";
 export default function MusicPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [overview, setOverview] = useState({ loading: true, error: "", data: [] });
-  const [plex, setPlex] = useState({ loading: true, error: "", configured: false, url: "" });
+  const [plex, setPlex] = useState({ loading: true, error: "", configured: false, url: "", port: 8090 });
 
   useEffect(() => {
     let active = true;
@@ -35,12 +35,13 @@ export default function MusicPage() {
           loading: false,
           error: "",
           configured: Boolean(json.configured),
-          url: json.url || ""
+          url: json.url || "",
+          port: Number(json.port || 8090)
         });
       })
       .catch((err) => {
         if (!active) return;
-        setPlex({ loading: false, error: err.message, configured: false, url: "" });
+        setPlex({ loading: false, error: err.message, configured: false, url: "", port: 8090 });
       });
 
     return () => {
@@ -103,11 +104,21 @@ export default function MusicPage() {
             <article className="card">
               <h3>Plex Playlist Reorderer not configured</h3>
               <p className="muted">
-                Set <code>PLEX_URL</code> in Hydrarr environment to embed the tool here.
+                Set <code>PLEX_URL</code> to your Plex server URL (example: <code>http://192.168.1.10:32400</code>)
+                and deploy the <code>plex-playlist-reorder</code> service in this stack.
               </p>
             </article>
           )}
-          {!plex.loading && !plex.error && plex.configured && (
+          {!plex.loading && !plex.error && plex.configured && !plex.url && (
+            <article className="card">
+              <h3>Plex Playlist Reorderer URL not reachable</h3>
+              <p className="muted">
+                Hydrarr could not derive the public URL for the reorder service. Set
+                <code> PLEX_REORDER_PUBLIC_URL</code> or expose service port <code>{plex.port}</code>.
+              </p>
+            </article>
+          )}
+          {!plex.loading && !plex.error && plex.configured && Boolean(plex.url) && (
             <div className="music-plex-panel">
               <div className="music-plex-head">
                 <a className="action-btn" href={plex.url} target="_blank" rel="noreferrer">
