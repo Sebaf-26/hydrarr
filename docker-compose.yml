@@ -31,7 +31,8 @@ services:
       PLEX_REORDER_PUBLIC_URL: ${PLEX_REORDER_PUBLIC_URL:-}
 
   plex-playlist-reorder:
-    image: ${PLEX_REORDER_IMAGE:-ghcr.io/sebaf-26/plex-playlist-reorder:latest}
+    build:
+      context: ./integrations/plex-playlist-reorder
     container_name: plex-playlist-reorder
     restart: unless-stopped
     ports:

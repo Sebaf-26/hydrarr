@@ -69,9 +69,10 @@ PLEX_URL=http://YOUR_PLEX_IP:32400
 PLEX_REORDER_PORT=8090
 # Optional public URL override (useful behind reverse proxy)
 PLEX_REORDER_PUBLIC_URL=
-# Optional image override for plex-playlist-reorder service
-PLEX_REORDER_IMAGE=ghcr.io/sebaf-26/plex-playlist-reorder:latest
 ```
+
+`plex-playlist-reorder` is bundled in this repository under
+`integrations/plex-playlist-reorder` and is built locally by docker compose.
 
 ## License
 

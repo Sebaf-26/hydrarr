@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plex Playlist Reorder</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="wrap">
+    <h1>Plex Playlist Reorder</h1>
+    <p class="muted">Upload an Apple Music export (TXT/CSV), select a Plex playlist, and confirm reordering.</p>
+
+    <section class="card">
+      <h2>0) Plex Login</h2>
+      <button id="plexLoginBtn">Sign in with Plex</button>
+      <div id="plexAuthInfo" class="small"></div>
+    </section>
+
+    <section class="card">
+      <h2>1) Upload Apple Music File</h2>
+      <input type="file" id="fileInput" accept=".txt,.csv" autocomplete="off">
+      <button id="uploadBtn">Upload</button>
+      <div id="uploadInfo" class="small"></div>
+    </section>
+
+    <section class="card">
+      <h2>2) Select Plex Playlist</h2>
+      <select id="playlistSelect">
+        <option value="">Sign in with Plex to load playlists...</option>
+      </select>
+      <button id="previewBtn">Preview Order</button>
+    </section>
+
+    <section class="card">
+      <h2>3) Confirm</h2>
+      <div id="previewInfo" class="small"></div>
+      <label class="check">
+        <input type="checkbox" id="confirmCheck">
+        Are you sure? Apply reorder now
+      </label>
+      <button id="applyBtn" class="danger">Apply Reorder</button>
+      <div id="result" class="small"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">© Progetto Hydratech</footer>
+
+  <script>
+    let uploadId = null;
+    let plexToken = null;
+    let plexLoginPolling = false;
+
+    const el = {
+      plexLoginBtn: document.getElementById('plexLoginBtn'),
+      plexAuthInfo: document.getElementById('plexAuthInfo'),
+      fileInput: document.getElementById('fileInput'),
+      uploadBtn: document.getElementById('uploadBtn'),
+      uploadInfo: document.getElementById('uploadInfo'),
+      playlistSelect: document.getElementById('playlistSelect'),
+      previewBtn: document.getElementById('previewBtn'),
+      previewInfo: document.getElementById('previewInfo'),
+      confirmCheck: document.getElementById('confirmCheck'),
+      applyBtn: document.getElementById('applyBtn'),
+      result: document.getElementById('result'),
+    };
+
+    function renderError(container, msg) {
+      container.innerHTML = `<span class="err">${msg}</span>`;
+    }
+
+    function renderOk(container, msg) {
+      container.innerHTML = `<span class="ok">${msg}</span>`;
+    }
+
+    function authHeaders(isJson = false) {
+      const headers = {};
+      if (isJson) headers['Content-Type'] = 'application/json';
+      if (plexToken) headers['X-Plex-Token'] = plexToken;
+      return headers;
+    }
+
+    function resetPageState() {
+      uploadId = null;
+      el.fileInput.value = '';
+      el.confirmCheck.checked = false;
+      el.uploadInfo.textContent = '';
+      el.previewInfo.textContent = '';
+      el.result.textContent = '';
+    }
+
+    async function readJsonResponse(res) {
+      const body = await res.text();
+      if (!body) return {};
+      try {
+        return JSON.parse(body);
+      } catch (_) {
+        return { error: body };
+      }
+    }
+
+    async function loadPlaylists() {
+      el.playlistSelect.innerHTML = '<option value="">Loading playlists...</option>';
+      try {
+        const res = await fetch('/api/playlists', { headers: authHeaders(false) });
+        const data = await readJsonResponse(res);
+        if (!res.ok) {
+          const errMsg = String(data.error || 'Failed to load playlists');
+          const lower = errMsg.toLowerCase();
+          if (lower.includes('oauth token') || lower.includes('missing plexbaseurl')) {
+            el.playlistSelect.innerHTML = '<option value="">Sign in with Plex to load playlists...</option>';
+            return;
+          }
+          el.playlistSelect.innerHTML = '<option value="">Error</option>';
+          renderError(el.previewInfo, errMsg);
+          return;
+        }
+
+        el.playlistSelect.innerHTML = '<option value="">Select...</option>';
+        for (const p of data.playlists || []) {
+          const o = document.createElement('option');
+          o.value = p.id;
+          o.textContent = `${p.title} (${p.count})`;
+          el.playlistSelect.appendChild(o);
+        }
+        if ((data.playlists || []).length === 0) {
+          el.playlistSelect.innerHTML = '<option value="">No audio playlists found</option>';
+        }
+      } catch (e) {
+        el.playlistSelect.innerHTML = '<option value="">Error</option>';
+        renderError(el.previewInfo, String(e));
+      }
+    }
+
+    async function pollPlexLogin(sessionId) {
+      if (plexLoginPolling) return;
+      plexLoginPolling = true;
+      const maxTries = 120;
+      for (let i = 0; i < maxTries; i++) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const res = await fetch(`/api/auth/plex/status?sessionId=${encodeURIComponent(sessionId)}`);
+        const data = await readJsonResponse(res);
+        if (!res.ok) {
+          renderError(el.plexAuthInfo, data.error || 'Failed to verify Plex login.');
+          plexLoginPolling = false;
+          return;
+        }
+        if (data.loggedIn) {
+          plexToken = data.plexToken;
+          renderOk(el.plexAuthInfo, 'Plex login completed. OAuth token active for this browser session.');
+          await loadPlaylists();
+          plexLoginPolling = false;
+          return;
+        }
+      }
+      renderError(el.plexAuthInfo, 'Plex login timed out. Please try again.');
+      plexLoginPolling = false;
+    }
+
+    el.plexLoginBtn.addEventListener('click', async () => {
+      try {
+        el.plexAuthInfo.textContent = 'Opening Plex login...';
+        const res = await fetch('/api/auth/plex/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ forwardUrl: window.location.origin + '/auth/plex/callback' })
+        });
+        const data = await readJsonResponse(res);
+        if (!res.ok) {
+          renderError(el.plexAuthInfo, data.error || 'Failed to start Plex OAuth.');
+          return;
+        }
+
+        const popup = window.open(data.authUrl, 'plex-oauth-login', 'width=520,height=760');
+        if (!popup) {
+          renderError(el.plexAuthInfo, 'Popup blocked by browser. Enable popups and try again.');
+          return;
+        }
+        renderOk(el.plexAuthInfo, 'Complete login in the Plex popup. It will close automatically.');
+        await pollPlexLogin(data.sessionId);
+      } catch (e) {
+        renderError(el.plexAuthInfo, String(e));
+      }
+    });
+
+    el.uploadBtn.addEventListener('click', async () => {
+      el.uploadInfo.textContent = '';
+      const file = el.fileInput.files[0];
+      if (!file) {
+        renderError(el.uploadInfo, 'Please select a file before uploading.');
+        return;
+      }
+
+      const form = new FormData();
+      form.append('file', file);
+
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: form });
+        const data = await readJsonResponse(res);
+        if (!res.ok) {
+          renderError(el.uploadInfo, data.error || 'Upload failed');
+          return;
+        }
+        uploadId = data.uploadId;
+        renderOk(el.uploadInfo, `Upload complete: ${data.tracks} tracks parsed.`);
+      } catch (e) {
+        renderError(el.uploadInfo, String(e));
+      }
+    });
+
+    el.previewBtn.addEventListener('click', async () => {
+      el.previewInfo.textContent = '';
+      const playlistId = el.playlistSelect.value;
+      if (!uploadId) {
+        renderError(el.previewInfo, 'Upload your Apple Music file first.');
+        return;
+      }
+      if (!playlistId) {
+        renderError(el.previewInfo, 'Please select a Plex playlist.');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/preview', {
+          method: 'POST',
+          headers: authHeaders(true),
+          body: JSON.stringify({ uploadId, playlistId })
+        });
+        const data = await readJsonResponse(res);
+        if (!res.ok) {
+          renderError(el.previewInfo, data.error || 'Preview failed');
+          return;
+        }
+
+        const previewRows = (data.newOrderPreview || []).slice(0, 10)
+          .map(t => `<li>${t.artist ? `${t.artist} - ` : ''}${t.title}</li>`)
+          .join('');
+        const importedRows = (data.importedSample || []).slice(0, 10)
+          .map(t => `<li>${t.artist ? `${t.artist} - ` : ''}${t.title}</li>`)
+          .join('');
+        const missingRows = (data.missingInPlex || []).slice(0, 10)
+          .map(t => `<li>${t.artist ? `${t.artist} - ` : ''}${t.title}</li>`)
+          .join('');
+        const plexRows = (data.plexSample || []).slice(0, 10)
+          .map(t => `<li>${t.artist ? `${t.artist} - ` : ''}${t.title}</li>`)
+          .join('');
+        const b = data.matchBreakdown || {};
+
+        el.previewInfo.innerHTML = `
+          <div><strong>Playlist:</strong> ${data.playlistTitle}</div>
+          <div><strong>Matches:</strong> ${data.matches} / ${data.uploadedCount ?? 0}</div>
+          <div><strong>Missing in Plex:</strong> ${data.missingTotal ?? 0}</div>
+          <div><strong>Plex items loaded:</strong> ${data.currentCount ?? 0} / ${data.leafCount ?? 0} reported by Plex</div>
+          <div><strong>Imported file sample (first 10):</strong></div>
+          <ol>${importedRows}</ol>
+          <div><strong>Current Plex playlist sample (first 10):</strong></div>
+          <ol>${plexRows}</ol>
+          <div><strong>Match breakdown:</strong>
+            exact title+artist ${b.exact_title_artist ?? 0},
+            exact title ${b.exact_title_only ?? 0},
+            loose title+artist ${b.loose_title_artist ?? 0},
+            loose title ${b.loose_title_only ?? 0}
+          </div>
+          <div><strong>New order preview (first 10):</strong></div>
+          <ol>${previewRows}</ol>
+          <div><strong>Missing sample (first 10):</strong></div>
+          <ol>${missingRows}</ol>
+        `;
+      } catch (e) {
+        renderError(el.previewInfo, String(e));
+      }
+    });
+
+    el.applyBtn.addEventListener('click', async () => {
+      el.result.textContent = '';
+      const playlistId = el.playlistSelect.value;
+      if (!uploadId || !playlistId) {
+        renderError(el.result, 'Missing upload or selected playlist.');
+        return;
+      }
+      if (!el.confirmCheck.checked) {
+        renderError(el.result, 'Please check confirmation before applying.');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/reorder', {
+          method: 'POST',
+          headers: authHeaders(true),
+          body: JSON.stringify({ uploadId, playlistId, confirm: true })
+        });
+        const data = await readJsonResponse(res);
+        if (!res.ok) {
+          renderError(el.result, data.error || 'Reorder failed');
+          return;
+        }
+        renderOk(el.result, `Reorder completed: ${data.playlistTitle}. Ordered tracks: ${data.ordered}, matches: ${data.matches}, missing: ${data.missing}`);
+      } catch (e) {
+        renderError(el.result, String(e));
+      }
+    });
+
+    window.addEventListener('message', async (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data && event.data.type === 'plex-auth-complete') {
+        renderOk(el.plexAuthInfo, 'Plex authorization received. Verifying login...');
+      }
+    });
+
+    // Avoid sticky form state when browser restores page from cache.
+    window.addEventListener('pageshow', () => {
+      resetPageState();
+    });
+
+    loadPlaylists();
+  </script>
+</body>
+</html>

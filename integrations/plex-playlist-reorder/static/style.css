@@ -1,0 +1,185 @@
+:root {
+  --bg-1: #05131f;
+  --bg-2: #0a2236;
+  --bg-3: #10344f;
+  --card: rgba(8, 25, 40, 0.72);
+  --card-border: rgba(99, 220, 255, 0.22);
+  --text: #e9f6ff;
+  --muted: #9abdd0;
+  --accent: #12c7f5;
+  --accent-strong: #00a8df;
+  --danger: #ff4b5c;
+  --ok: #49e38f;
+  --input-bg: rgba(3, 15, 26, 0.62);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 620px at -10% -10%, #1a4f75 0%, transparent 55%),
+    radial-gradient(900px 520px at 100% 0%, #0f4667 0%, transparent 52%),
+    linear-gradient(140deg, var(--bg-1), var(--bg-2) 52%, var(--bg-3));
+  background-attachment: fixed;
+}
+
+.wrap {
+  max-width: 940px;
+  margin: 28px auto 18px;
+  padding: 0 16px;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 2.8vw, 2.3rem);
+  letter-spacing: 0.02em;
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 1.18rem;
+  letter-spacing: 0.01em;
+}
+
+.muted {
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 18px;
+  margin: 16px 0;
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(147, 234, 255, 0.07);
+  animation: reveal 300ms ease-out both;
+}
+
+input[type="file"],
+select,
+button {
+  margin: 8px 0;
+  display: block;
+}
+
+select,
+button,
+input[type="file"] {
+  border-radius: 10px;
+  padding: 10px 13px;
+  font-size: 14px;
+}
+
+select,
+input[type="file"] {
+  border: 1px solid rgba(148, 229, 255, 0.28);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+select:focus,
+input[type="file"]:focus,
+button:focus {
+  outline: 2px solid rgba(18, 199, 245, 0.45);
+  outline-offset: 2px;
+}
+
+button {
+  border: none;
+  color: #03111a;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), #7fe7ff);
+  box-shadow: 0 10px 22px rgba(18, 199, 245, 0.28);
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+button:hover {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button.danger {
+  color: #fff;
+  background: linear-gradient(135deg, #e03143, var(--danger));
+  box-shadow: 0 10px 22px rgba(224, 49, 67, 0.28);
+}
+
+.small {
+  margin-top: 10px;
+  font-size: 0.98rem;
+  line-height: 1.46;
+}
+
+.err {
+  color: #ff8995;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent-strong);
+}
+
+ol {
+  margin: 8px 0 0 22px;
+}
+
+.site-footer {
+  text-align: center;
+  color: var(--muted);
+  padding: 18px 10px 24px;
+  font-size: 0.92rem;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 680px) {
+  .wrap {
+    margin-top: 14px;
+    padding: 0 12px;
+  }
+
+  .card {
+    padding: 15px;
+  }
+
+  button,
+  select,
+  input[type="file"] {
+    width: 100%;
+  }
+}
