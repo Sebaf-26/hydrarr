@@ -62,6 +62,10 @@ QBITTORRENT_URL=http://qbittorrent:8080
 QBITTORRENT_USERNAME=admin
 QBITTORRENT_PASSWORD=your_qbittorrent_password
 
+# Optional: Overseerr integration
+OVERSEERR_URL=http://overseerr:5055
+OVERSEERR_API_KEY=your_overseerr_api_key
+
 # Optional: PlexPlaylistReorder integration in /music
 # Plex server URL used by plex-playlist-reorder service
 PLEX_URL=http://YOUR_PLEX_IP:32400

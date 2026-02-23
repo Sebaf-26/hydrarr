@@ -5,6 +5,7 @@ const links = [
   { to: "/tv", label: "TV Series" },
   { to: "/movies", label: "Movies" },
   { to: "/music", label: "Music" },
+  { to: "/overseerr", label: "Overseerr" },
   { to: "/debugging", label: "Debugging" }
 ];
 

@@ -29,6 +29,8 @@ services:
       PLEX_URL: ${PLEX_URL:-}
       PLEX_REORDER_PORT: ${PLEX_REORDER_PORT:-8090}
       PLEX_REORDER_PUBLIC_URL: ${PLEX_REORDER_PUBLIC_URL:-}
+      OVERSEERR_URL: ${OVERSEERR_URL:-}
+      OVERSEERR_API_KEY: ${OVERSEERR_API_KEY:-}
 
   plex-playlist-reorder:
     build:

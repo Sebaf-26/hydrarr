@@ -14,6 +14,7 @@ const distDir = path.join(rootDir, "dist");
 const app = express();
 app.use(cors());
 app.use("/api/plex-reorder", plexReorderProxy);
+app.use("/api/overseerr", overseerrProxy);
 app.use(express.json());
 
 const SERVICE_SPECS = {
@@ -43,6 +44,8 @@ const PLEX_URL = process.env.PLEX_URL || "";
 const PLEX_REORDER_PORT = Number(process.env.PLEX_REORDER_PORT || 8090);
 const PLEX_REORDER_PUBLIC_URL = process.env.PLEX_REORDER_PUBLIC_URL || "";
 const PLEX_REORDER_INTERNAL_URL = process.env.PLEX_REORDER_INTERNAL_URL || "http://plex-playlist-reorder:8080";
+const OVERSEERR_URL = process.env.OVERSEERR_URL || "";
+const OVERSEERR_API_KEY = process.env.OVERSEERR_API_KEY || "";
 const QBT_TIMEOUT_MS = Number(process.env.QBITTORRENT_TIMEOUT_MS || 8000);
 const ARR_TIMEOUT_MS = Number(process.env.ARR_TIMEOUT_MS || 20000);
 const ARR_LOG_TIMEOUT_MS = Number(process.env.ARR_LOG_TIMEOUT_MS || Math.max(ARR_TIMEOUT_MS, 30000));
@@ -130,6 +133,50 @@ async function plexReorderProxy(req, res) {
     return res.send(bodyBuffer);
   } catch (err) {
     return res.status(502).json({ error: `plex-reorder proxy failed: ${err.message || "Unknown error"}` });
+  }
+}
+
+async function overseerrProxy(req, res) {
+  const base = normalizeUrl(String(OVERSEERR_URL || "").trim());
+  if (!base) {
+    return res.status(400).json({ error: "Overseerr not configured" });
+  }
+  if (!OVERSEERR_API_KEY) {
+    return res.status(400).json({ error: "Overseerr API key not configured" });
+  }
+
+  const pathWithQuery = req.originalUrl.replace(/^\/api\/overseerr/, "") || "/";
+  const targetUrl = `${base}${pathWithQuery.startsWith("/") ? "" : "/"}${pathWithQuery}`;
+
+  try {
+    const headers = { ...req.headers };
+    delete headers.host;
+    delete headers.connection;
+    delete headers["content-length"];
+    headers["X-Api-Key"] = OVERSEERR_API_KEY;
+
+    const hasBody = !["GET", "HEAD"].includes(req.method.toUpperCase());
+    const fetchOptions = {
+      method: req.method,
+      headers,
+      redirect: "manual"
+    };
+    if (hasBody) {
+      fetchOptions.body = req;
+      fetchOptions.duplex = "half";
+    }
+
+    const upstream = await fetch(targetUrl, fetchOptions);
+    const bodyBuffer = Buffer.from(await upstream.arrayBuffer());
+
+    res.status(upstream.status);
+    for (const [name, value] of upstream.headers.entries()) {
+      if (name.toLowerCase() === "transfer-encoding") continue;
+      res.setHeader(name, value);
+    }
+    return res.send(bodyBuffer);
+  } catch (err) {
+    return res.status(502).json({ error: `overseerr proxy failed: ${err.message || "Unknown error"}` });
   }
 }
 
@@ -933,6 +980,13 @@ app.get("/api/integrations/plex-playlist-reorder", (req, res) => {
     url: normalizeUrl(url),
     plexConfigured: Boolean(PLEX_URL),
     port: PLEX_REORDER_PORT
+  });
+});
+
+app.get("/api/integrations/overseerr", (_, res) => {
+  res.json({
+    configured: Boolean(OVERSEERR_URL && OVERSEERR_API_KEY),
+    url: normalizeUrl(String(OVERSEERR_URL || "").trim())
   });
 });
 

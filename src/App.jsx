@@ -3,6 +3,7 @@ import Layout from "./components/Layout";
 import ErrorsPage from "./pages/ErrorsPage";
 import MusicPage from "./pages/MusicPage";
 import MoviesPage from "./pages/MoviesPage";
+import OverseerrPage from "./pages/OverseerrPage";
 import OverviewPage from "./pages/OverviewPage";
 import TvPage from "./pages/TvPage";
 
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/tv" element={<TvPage />} />
         <Route path="/movies" element={<MoviesPage />} />
         <Route path="/music" element={<MusicPage />} />
+        <Route path="/overseerr" element={<OverseerrPage />} />
         <Route path="/debugging" element={<ErrorsPage />} />
         <Route path="/errors" element={<Navigate to="/debugging" replace />} />
       </Routes>
