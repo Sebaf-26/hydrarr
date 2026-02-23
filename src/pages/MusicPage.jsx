@@ -244,12 +244,19 @@ export default function MusicPage() {
 
             <article className="card">
               <h3>Albums</h3>
-              <div className="music-overview-list">
+              <div className="music-albums-grid">
                 {overview.albums.map((album) => (
-                  <div key={album.id} className="music-overview-row">
-                    <span>{album.title}</span>
-                    <span className="muted">{album.artistName}{album.year ? ` • ${album.year}` : ""}</span>
-                  </div>
+                  <article key={album.id} className="music-album-card">
+                    {album.coverUrl ? (
+                      <img className="music-album-cover" src={album.coverUrl} alt={album.title} loading="lazy" />
+                    ) : (
+                      <div className="music-album-cover music-album-cover-fallback">No Cover</div>
+                    )}
+                    <div className="music-album-meta">
+                      <strong>{album.title}</strong>
+                      <span className="muted">{album.artistName}{album.year ? ` • ${album.year}` : ""}</span>
+                    </div>
+                  </article>
                 ))}
               </div>
               {!overview.loading && !overview.error && overview.configured && overview.albums.length === 0 && (

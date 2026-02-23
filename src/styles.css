@@ -160,6 +160,43 @@ body {
   border-bottom: 0;
 }
 
+.music-albums-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.music-album-card {
+  border: 1px solid rgba(84, 142, 233, 0.2);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(6, 18, 35, 0.5);
+}
+
+.music-album-cover {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: block;
+  background: rgba(5, 14, 28, 0.8);
+}
+
+.music-album-cover-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.music-album-meta {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+}
+
 .music-integration-wrap {
   margin-top: 8px;
 }

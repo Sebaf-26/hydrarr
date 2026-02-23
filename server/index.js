@@ -513,6 +513,17 @@ function statusRank(status) {
   return 3;
 }
 
+function shuffleArray(items) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = copy[i];
+    copy[i] = copy[j];
+    copy[j] = tmp;
+  }
+  return copy;
+}
+
 function extractEpisodeHint(text) {
   const value = String(text || "");
   const single = value.match(/S(\d{1,2})E(\d{1,3})/i);
@@ -1303,12 +1314,14 @@ app.get("/api/music/overview", async (_, res) => {
         id: item.id,
         title: item.title || item.sortTitle || "Unknown album",
         artistName: item.artist?.artistName || item.artistName || "Unknown artist",
-        year: extractYear(item.releaseDate) || extractYear(item.lastInfoSync) || null
+        year: extractYear(item.releaseDate) || extractYear(item.lastInfoSync) || null,
+        coverUrl: pickPosterUrl("lidarr", item)
       }))
-      .sort((a, b) => a.title.localeCompare(b.title))
-      .slice(0, 1200);
+      .filter((item) => item.title)
+      .slice(0, 1500);
+    const randomAlbums = shuffleArray(albums).slice(0, 300);
 
-    return res.json({ configured: true, artists, albums });
+    return res.json({ configured: true, artists, albums: randomAlbums });
   } catch (err) {
     return res.status(502).json({ error: err.message || "Failed to fetch music overview" });
   }
