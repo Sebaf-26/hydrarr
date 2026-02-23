@@ -604,6 +604,27 @@ function buildMovieQueueMap(records) {
   return map;
 }
 
+function dedupeQueueRecords(records) {
+  const seen = new Set();
+  const unique = [];
+
+  for (const record of records) {
+    const hash = normalizeHash(record?.downloadId || record?.trackedDownloadId || "");
+    const fallbackKey =
+      record?.id ||
+      record?.queueItemId ||
+      record?.releaseTitle ||
+      record?.title ||
+      "";
+    const key = hash || String(fallbackKey).trim();
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    unique.push(record);
+  }
+
+  return unique;
+}
+
 async function fetchCategoryItems(service) {
   if (!configuredServices[service]) {
     return [
@@ -762,12 +783,13 @@ app.get("/api/tv/overview", async (_, res) => {
       const missingEpisodes = Math.max(totalEpisodes - episodeFileCount, 0);
       const queueRecordsForSeries = queueBySeries.get(item.id) || [];
       const queueState = queueStateFromRecords(queueRecordsForSeries);
-      const qbtItems = queueRecordsForSeries
+      const uniqueQueueRecordsForSeries = dedupeQueueRecords(queueRecordsForSeries);
+      const qbtItems = uniqueQueueRecordsForSeries
         .map((record) => normalizeHash(record.downloadId || record.trackedDownloadId || ""))
         .map((hash) => qbtByHash.get(hash))
         .filter(Boolean);
       const qbtDownload = aggregateQbtDownloads(qbtItems);
-      const downloadItems = queueRecordsForSeries
+      const downloadItems = uniqueQueueRecordsForSeries
         .map((record) => {
           const hash = normalizeHash(record.downloadId || record.trackedDownloadId || "");
           const qbt = qbtByHash.get(hash);
@@ -913,13 +935,14 @@ app.get("/api/movies/overview", async (_, res) => {
     const normalizedMovies = movies.map((item) => {
       const queueForMovie = queueByMovie.get(item.id) || [];
       const queueState = queueStateFromRecords(queueForMovie);
+      const uniqueQueueForMovie = dedupeQueueRecords(queueForMovie);
       const hasFile = Boolean(item.hasFile || item.movieFile);
-      const qbtItems = queueForMovie
+      const qbtItems = uniqueQueueForMovie
         .map((record) => normalizeHash(record.downloadId || record.trackedDownloadId || ""))
         .map((hash) => qbtByHash.get(hash))
         .filter(Boolean);
       const qbtDownload = aggregateQbtDownloads(qbtItems);
-      const downloadItems = queueForMovie
+      const downloadItems = uniqueQueueForMovie
         .map((record) => {
           const hash = normalizeHash(record.downloadId || record.trackedDownloadId || "");
           const qbt = qbtByHash.get(hash);
