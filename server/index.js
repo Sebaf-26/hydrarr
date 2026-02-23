@@ -39,6 +39,8 @@ const QBT_CONFIG = {
   password: process.env.QBITTORRENT_PASSWORD || ""
 };
 const QBT_TIMEOUT_MS = Number(process.env.QBITTORRENT_TIMEOUT_MS || 8000);
+const ARR_TIMEOUT_MS = Number(process.env.ARR_TIMEOUT_MS || 20000);
+const ARR_LOG_TIMEOUT_MS = Number(process.env.ARR_LOG_TIMEOUT_MS || Math.max(ARR_TIMEOUT_MS, 30000));
 const HYDRARR_LOG_LIMIT = 1000;
 const hydrarrLogs = [];
 
@@ -119,7 +121,7 @@ async function requestArr(serviceName, endpoint, options = {}) {
     headers["Content-Type"] = "application/json";
   }
 
-  const timeoutMs = Number(options.timeoutMs || 10000);
+  const timeoutMs = Number(options.timeoutMs || ARR_TIMEOUT_MS);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -1222,7 +1224,9 @@ app.get("/api/errors", async (req, res) => {
       if (service === "qbittorrent") {
         return fetchQbtLogs();
       }
-      const logs = await requestArrWithFallback(service, getLogEndpoints(service));
+      const logs = await requestArrWithFallback(service, getLogEndpoints(service), {
+        timeoutMs: ARR_LOG_TIMEOUT_MS
+      });
       const records = Array.isArray(logs.records)
         ? logs.records
         : Array.isArray(logs.data)
