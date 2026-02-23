@@ -8,6 +8,7 @@ Hydrarr is a unified ARR dashboard for Sonarr, Radarr, Lidarr, Readarr, Prowlarr
 - Centralized Errors page
 - Error filtering by service, level, and search term
 - Optional qBittorrent integration for live download details (progress, ETA, stalled, peers, GB)
+- Optional Plex Playlist Reorderer embed in Music section
 - Runtime configuration via `.env` (ideal for Portainer Git Repository deployment)
 
 ## Environment variables
@@ -60,6 +61,9 @@ BAZARR_API_KEY=your_bazarr_api_key
 QBITTORRENT_URL=http://qbittorrent:8080
 QBITTORRENT_USERNAME=admin
 QBITTORRENT_PASSWORD=your_qbittorrent_password
+
+# Optional: embed Plex Playlist Reorderer tab in /music
+PLEX_URL=http://plex-playlist-reorder:8090
 ```
 
 ## License

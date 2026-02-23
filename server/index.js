@@ -38,6 +38,7 @@ const QBT_CONFIG = {
   username: process.env.QBITTORRENT_USERNAME || "",
   password: process.env.QBITTORRENT_PASSWORD || ""
 };
+const PLEX_URL = process.env.PLEX_URL || "";
 const QBT_TIMEOUT_MS = Number(process.env.QBITTORRENT_TIMEOUT_MS || 8000);
 const ARR_TIMEOUT_MS = Number(process.env.ARR_TIMEOUT_MS || 20000);
 const ARR_LOG_TIMEOUT_MS = Number(process.env.ARR_LOG_TIMEOUT_MS || Math.max(ARR_TIMEOUT_MS, 30000));
@@ -863,6 +864,14 @@ app.get("/api/services", (_, res) => {
       ...(isQbtConfigured() ? ["qbittorrent"] : []),
       "hydrarr"
     ]
+  });
+});
+
+app.get("/api/integrations/plex-playlist-reorder", (_, res) => {
+  const url = normalizeUrl(String(PLEX_URL || "").trim());
+  res.json({
+    configured: Boolean(url),
+    url
   });
 });
 
