@@ -1278,6 +1278,42 @@ app.get("/api/movies/overview", async (_, res) => {
   }
 });
 
+app.get("/api/music/overview", async (_, res) => {
+  if (!configuredServices.lidarr) {
+    return res.json({ configured: false, artists: [], albums: [] });
+  }
+
+  try {
+    const base = getPrimaryBase("lidarr");
+    const [artistsPayload, albumsPayload] = await Promise.all([
+      requestArrWithFallback("lidarr", [`${base}/artist`], { timeoutMs: 30000 }),
+      requestArrWithFallback("lidarr", [`${base}/album`], { timeoutMs: 30000 })
+    ]);
+
+    const artists = extractRecords(artistsPayload)
+      .map((item) => ({
+        id: item.id,
+        name: item.artistName || item.sortName || item.foreignArtistId || "Unknown artist"
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 800);
+
+    const albums = extractRecords(albumsPayload)
+      .map((item) => ({
+        id: item.id,
+        title: item.title || item.sortTitle || "Unknown album",
+        artistName: item.artist?.artistName || item.artistName || "Unknown artist",
+        year: extractYear(item.releaseDate) || extractYear(item.lastInfoSync) || null
+      }))
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .slice(0, 1200);
+
+    return res.json({ configured: true, artists, albums });
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Failed to fetch music overview" });
+  }
+});
+
 app.get("/api/library/items", async (req, res) => {
   const service = String(req.query.service || "").toLowerCase();
   const q = String(req.query.q || "").trim().toLowerCase();

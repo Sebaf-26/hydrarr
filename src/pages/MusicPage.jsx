@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib";
-import ServiceBadge from "../components/ServiceBadge";
 
 async function readJsonSafe(res) {
   const text = await res.text();
@@ -14,7 +13,13 @@ async function readJsonSafe(res) {
 
 export default function MusicPage() {
   const [activeTab, setActiveTab] = useState("overview");
-  const [overview, setOverview] = useState({ loading: true, error: "", data: [] });
+  const [overview, setOverview] = useState({
+    loading: true,
+    error: "",
+    configured: true,
+    artists: [],
+    albums: []
+  });
   const [plexCfg, setPlexCfg] = useState({ loading: true, error: "", configured: false });
   const [plexToken, setPlexToken] = useState("");
   const [uploadId, setUploadId] = useState("");
@@ -30,14 +35,23 @@ export default function MusicPage() {
 
   useEffect(() => {
     let active = true;
-    setOverview({ loading: true, error: "", data: [] });
+    setOverview({ loading: true, error: "", configured: true, artists: [], albums: [] });
 
-    apiFetch("/api/dashboard/music")
+    apiFetch("/api/music/overview")
       .then((json) => {
-        if (active) setOverview({ loading: false, error: "", data: json.items || [] });
+        if (!active) return;
+        setOverview({
+          loading: false,
+          error: "",
+          configured: Boolean(json.configured),
+          artists: json.artists || [],
+          albums: json.albums || []
+        });
       })
       .catch((err) => {
-        if (active) setOverview({ loading: false, error: err.message, data: [] });
+        if (active) {
+          setOverview({ loading: false, error: err.message, configured: true, artists: [], albums: [] });
+        }
       });
 
     return () => {
@@ -209,18 +223,39 @@ export default function MusicPage() {
         <>
           {overview.loading && <p>Loading music data...</p>}
           {overview.error && <p className="error">{overview.error}</p>}
+          {!overview.loading && !overview.error && !overview.configured && (
+            <p className="error">Lidarr is not configured. Add LIDARR_URL and LIDARR_API_KEY in env.</p>
+          )}
 
-          <div className="grid">
-            {overview.data.map((item) => (
-              <article className="card" key={`${item.service}-${item.id}`}>
-                <div className="row">
-                  <ServiceBadge name={item.service} />
-                  <span className="muted">{item.source}</span>
-                </div>
-                <h3>{item.title || "Unknown"}</h3>
-                <p className="muted">{item.summary || "No details available."}</p>
-              </article>
-            ))}
+          <div className="music-overview-grid">
+            <article className="card">
+              <h3>Artists</h3>
+              <div className="music-overview-list">
+                {overview.artists.map((artist) => (
+                  <div key={artist.id} className="music-overview-row">
+                    <span>{artist.name}</span>
+                  </div>
+                ))}
+              </div>
+              {!overview.loading && !overview.error && overview.configured && overview.artists.length === 0 && (
+                <p className="muted">No artists found.</p>
+              )}
+            </article>
+
+            <article className="card">
+              <h3>Albums</h3>
+              <div className="music-overview-list">
+                {overview.albums.map((album) => (
+                  <div key={album.id} className="music-overview-row">
+                    <span>{album.title}</span>
+                    <span className="muted">{album.artistName}{album.year ? ` • ${album.year}` : ""}</span>
+                  </div>
+                ))}
+              </div>
+              {!overview.loading && !overview.error && overview.configured && overview.albums.length === 0 && (
+                <p className="muted">No albums found.</p>
+              )}
+            </article>
           </div>
         </>
       )}
