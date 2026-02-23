@@ -92,6 +92,10 @@ function addHydrarrLog(level, message, details = null) {
   }
 }
 
+function isSonarrTraceEnabled(serviceName) {
+  return String(serviceName || "").toLowerCase() === "sonarr";
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -166,13 +170,48 @@ async function requestArr(serviceName, endpoint, options = {}) {
 
 async function requestArrWithFallback(serviceName, endpoints, options = {}) {
   let lastError = null;
+  const trace = isSonarrTraceEnabled(serviceName);
+  const startedAt = Date.now();
+  if (trace) {
+    addHydrarrLog("info", "Sonarr fallback request started", {
+      serviceName,
+      endpoints,
+      timeoutMs: Number(options.timeoutMs || ARR_TIMEOUT_MS)
+    });
+  }
+
   for (const endpoint of endpoints) {
+    const endpointStartedAt = Date.now();
     try {
-      return await requestArr(serviceName, endpoint, options);
+      const result = await requestArr(serviceName, endpoint, options);
+      if (trace) {
+        addHydrarrLog("info", "Sonarr endpoint succeeded", {
+          endpoint,
+          elapsedMs: Date.now() - endpointStartedAt,
+          totalElapsedMs: Date.now() - startedAt
+        });
+      }
+      return result;
     } catch (err) {
       lastError = err;
+      if (trace) {
+        addHydrarrLog("warn", "Sonarr endpoint failed", {
+          endpoint,
+          elapsedMs: Date.now() - endpointStartedAt,
+          error: err.message || "unknown error"
+        });
+      }
     }
   }
+
+  if (trace) {
+    addHydrarrLog("error", "Sonarr fallback request exhausted", {
+      endpoints,
+      totalElapsedMs: Date.now() - startedAt,
+      error: lastError?.message || "no endpoint available"
+    });
+  }
+
   throw lastError || new Error(`${serviceName}: no endpoint available`);
 }
 
@@ -184,14 +223,46 @@ async function probeArrService(serviceName) {
   const baseApi = getPrimaryBase(serviceName);
   const endpoints = [`${baseApi}/ping`, "/ping", "/"];
   const headers = { "X-Api-Key": service.apiKey };
+  const trace = isSonarrTraceEnabled(serviceName);
+
+  if (trace) {
+    addHydrarrLog("info", "Sonarr probe started", { endpoints, timeoutMs: ARR_PING_TIMEOUT_MS });
+  }
 
   for (const endpoint of endpoints) {
+    const endpointStartedAt = Date.now();
     try {
       const res = await fetchWithTimeout(`${baseUrl}${endpoint}`, { headers }, ARR_PING_TIMEOUT_MS);
-      if (res.ok) return true;
+      if (res.ok) {
+        if (trace) {
+          addHydrarrLog("info", "Sonarr probe succeeded", {
+            endpoint,
+            status: res.status,
+            elapsedMs: Date.now() - endpointStartedAt
+          });
+        }
+        return true;
+      }
+      if (trace) {
+        addHydrarrLog("warn", "Sonarr probe non-OK response", {
+          endpoint,
+          status: res.status,
+          elapsedMs: Date.now() - endpointStartedAt
+        });
+      }
     } catch {
+      if (trace) {
+        addHydrarrLog("warn", "Sonarr probe failed", {
+          endpoint,
+          elapsedMs: Date.now() - endpointStartedAt
+        });
+      }
       // Ignore and try next lightweight endpoint.
     }
+  }
+
+  if (trace) {
+    addHydrarrLog("error", "Sonarr probe failed on all endpoints", { endpoints });
   }
 
   return false;
@@ -782,8 +853,17 @@ app.get("/api/overview", async (_, res) => {
         };
       } catch (err) {
         const timedOut = String(err?.message || "").toLowerCase().includes("request timeout");
+        if (isSonarrTraceEnabled(service)) {
+          addHydrarrLog("warn", "Sonarr overview status failed", {
+            error: err?.message || "unknown",
+            timedOut
+          });
+        }
         if (timedOut) {
           const reachable = await probeArrService(service);
+          if (isSonarrTraceEnabled(service)) {
+            addHydrarrLog("info", "Sonarr overview timeout fallback result", { reachable });
+          }
           if (reachable) {
             return {
               service,
