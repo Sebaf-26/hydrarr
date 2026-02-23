@@ -40,7 +40,7 @@ function DownloadingMovieRow({ movie }) {
           <span className="movie-meta-pill">{movie.download.peers ?? "-"}</span>
         </div>
         <div className="movie-meta-item">
-          <span className="movie-meta-label">GB</span>
+          <span className="movie-meta-label">Size</span>
           <span className="movie-meta-pill">{movie.download.sizeGb ?? "-"}</span>
         </div>
         {movie.download.isStalled && (

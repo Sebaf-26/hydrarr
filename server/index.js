@@ -380,6 +380,7 @@ function buildQbtDownloadInfo(torrent) {
   return {
     hash: normalizeHash(torrent.hash),
     name: torrent.name || "",
+    category: String(torrent.category || "").toLowerCase(),
     state: torrent.state || "unknown",
     progressPct: roundTwo(Number(torrent.progress || 0) * 100),
     etaSeconds: eta > 0 ? eta : null,
@@ -411,6 +412,56 @@ function aggregateQbtDownloads(items) {
     sizeGb: roundTwo(items.reduce((sum, item) => sum + item.sizeGb, 0)),
     torrents: items.length
   };
+}
+
+function normalizeMatchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function likelyMovieTitleMatch(movieTitle, torrentName) {
+  const left = normalizeMatchText(movieTitle);
+  const right = normalizeMatchText(torrentName);
+  if (!left || !right) return false;
+  if (right.includes(left) || left.includes(right)) return true;
+
+  const stopWords = new Set(["the", "a", "an", "and", "of", "to", "in"]);
+  const keywords = left
+    .split(" ")
+    .filter((token) => token.length >= 3 && !stopWords.has(token));
+  if (!keywords.length) return false;
+
+  const hits = keywords.reduce((count, token) => {
+    const pattern = new RegExp(`(^|\\s)${token}(\\s|$)`, "i");
+    return count + (pattern.test(right) ? 1 : 0);
+  }, 0);
+  return hits >= Math.min(2, keywords.length);
+}
+
+function isQbtActiveDownloadState(state) {
+  const value = String(state || "").toLowerCase();
+  return (
+    value.includes("downloading") ||
+    value.includes("forceddl") ||
+    value.includes("stalleddl") ||
+    value.includes("queueddl") ||
+    value.includes("metadl")
+  );
+}
+
+function findRadarrQbtFallbackItems(movie, qbtItems) {
+  if (!movie || !Array.isArray(qbtItems) || qbtItems.length === 0) return [];
+  const title = movie.title || "";
+  if (!title) return [];
+
+  return qbtItems.filter((item) => {
+    const inRadarrCategory = String(item.category || "").includes("radarr");
+    const active = isQbtActiveDownloadState(item.state);
+    return inRadarrCategory && active && likelyMovieTitleMatch(title, item.name || "");
+  });
 }
 
 function statusRank(status) {
@@ -584,7 +635,7 @@ async function qbtLogin() {
 
 async function fetchQbtDownloadsByHash() {
   if (!isQbtConfigured()) {
-    return { configured: false, itemsByHash: new Map() };
+    return { configured: false, itemsByHash: new Map(), items: [] };
   }
 
   const cookie = await qbtLogin();
@@ -600,13 +651,15 @@ async function fetchQbtDownloadsByHash() {
 
   const data = await res.json();
   const map = new Map();
+  const items = [];
   for (const torrent of Array.isArray(data) ? data : []) {
     const info = buildQbtDownloadInfo(torrent);
+    items.push(info);
     if (!info.hash) continue;
     map.set(info.hash, info);
   }
 
-  return { configured: true, itemsByHash: map };
+  return { configured: true, itemsByHash: map, items };
 }
 
 async function fetchQbtStatus() {
@@ -1080,6 +1133,7 @@ app.get("/api/movies/overview", async (_, res) => {
     const queueRecords = queueResult.status === "fulfilled" ? extractRecords(queueResult.value) : [];
     const queueByMovie = buildMovieQueueMap(queueRecords);
     const qbtByHash = qbtResult.status === "fulfilled" ? qbtResult.value.itemsByHash : new Map();
+    const qbtItemsAll = qbtResult.status === "fulfilled" ? qbtResult.value.items : [];
     const qbtConfigured = qbtResult.status === "fulfilled" ? qbtResult.value.configured : Boolean(QBT_CONFIG.url);
 
     const normalizedMovies = movies.map((item) => {
@@ -1087,12 +1141,21 @@ app.get("/api/movies/overview", async (_, res) => {
       const queueState = queueStateFromRecords(queueForMovie);
       const uniqueQueueForMovie = dedupeQueueRecords(queueForMovie);
       const hasFile = Boolean(item.hasFile || item.movieFile);
-      const qbtItems = uniqueQueueForMovie
+      const qbtItemsFromQueue = uniqueQueueForMovie
         .map((record) => normalizeHash(record.downloadId || record.trackedDownloadId || ""))
         .map((hash) => qbtByHash.get(hash))
         .filter(Boolean);
+      const qbtItemsFallback = qbtItemsFromQueue.length ? [] : findRadarrQbtFallbackItems(item, qbtItemsAll);
+      if (qbtItemsFallback.length > 0) {
+        addHydrarrLog("info", "Radarr movie fallback matched qBittorrent torrents", {
+          movieId: item.id,
+          title: item.title,
+          torrents: qbtItemsFallback.length
+        });
+      }
+      const qbtItems = qbtItemsFromQueue.length ? qbtItemsFromQueue : qbtItemsFallback;
       const qbtDownload = aggregateQbtDownloads(qbtItems);
-      const downloadItems = uniqueQueueForMovie
+      const downloadItemsFromQueue = uniqueQueueForMovie
         .map((record) => {
           const hash = normalizeHash(record.downloadId || record.trackedDownloadId || "");
           const qbt = qbtByHash.get(hash);
@@ -1111,11 +1174,25 @@ app.get("/api/movies/overview", async (_, res) => {
           };
         })
         .filter(Boolean);
+      const downloadItems =
+        downloadItemsFromQueue.length > 0
+          ? downloadItemsFromQueue
+          : qbtItemsFallback.map((qbt) => ({
+              hash: qbt.hash,
+              name: qbt.name,
+              state: qbt.state,
+              progressPct: qbt.progressPct,
+              etaSeconds: qbt.etaSeconds,
+              isStalled: Boolean(qbt.isStalled),
+              stalledSeconds: qbt.stalledSeconds,
+              peers: qbt.peers,
+              sizeGb: qbt.sizeGb
+            }));
 
       let status = "available";
       if (queueState === "error") {
         status = "error";
-      } else if (queueState === "downloading") {
+      } else if (queueState === "downloading" || qbtItems.length > 0) {
         status = "downloading";
       } else if (!hasFile) {
         status = "wanted";
