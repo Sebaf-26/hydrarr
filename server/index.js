@@ -840,7 +840,6 @@ function extractRecords(payload) {
 function queueStateFromRecords(records) {
   const hasError = records.some((rec) => rec?.errorMessage || String(rec?.status || "").toLowerCase() === "failed");
   if (hasError) return "error";
-  if (records.length > 0) return "downloading";
   return "idle";
 }
 
@@ -1115,12 +1114,13 @@ app.get("/api/tv/overview", async (_, res) => {
         .map((record) => normalizeHash(record.downloadId || record.trackedDownloadId || ""))
         .map((hash) => qbtByHash.get(hash))
         .filter(Boolean);
-      const qbtDownload = aggregateQbtDownloads(qbtItems);
+      const activeQbtItems = qbtItems.filter((qbt) => isQbtActiveDownloadState(qbt.state));
+      const qbtDownload = aggregateQbtDownloads(activeQbtItems);
       const downloadItems = uniqueQueueRecordsForSeries
         .map((record) => {
           const hash = normalizeHash(record.downloadId || record.trackedDownloadId || "");
           const qbt = qbtByHash.get(hash);
-          if (!qbt && !hash) return null;
+          if (!qbt || !isQbtActiveDownloadState(qbt.state)) return null;
           const sourceTitle =
             qbt?.name ||
             record.title ||
@@ -1145,7 +1145,7 @@ app.get("/api/tv/overview", async (_, res) => {
       let status = "available";
       if (queueState === "error") {
         status = "error";
-      } else if (queueState === "downloading") {
+      } else if (activeQbtItems.length > 0) {
         status = "downloading";
       } else if (missingEpisodes > 0) {
         status = "wanted";
@@ -1278,12 +1278,13 @@ app.get("/api/movies/overview", async (_, res) => {
         });
       }
       const qbtItems = qbtItemsFromQueue.length ? qbtItemsFromQueue : qbtItemsFallback;
-      const qbtDownload = aggregateQbtDownloads(qbtItems);
+      const activeQbtItems = qbtItems.filter((qbt) => isQbtActiveDownloadState(qbt.state));
+      const qbtDownload = aggregateQbtDownloads(activeQbtItems);
       const downloadItemsFromQueue = uniqueQueueForMovie
         .map((record) => {
           const hash = normalizeHash(record.downloadId || record.trackedDownloadId || "");
           const qbt = qbtByHash.get(hash);
-          if (!qbt && !hash) return null;
+          if (!qbt || !isQbtActiveDownloadState(qbt.state)) return null;
           const sourceTitle = qbt?.name || record.title || record.releaseTitle || item.title || "Download";
           return {
             hash,
@@ -1301,7 +1302,7 @@ app.get("/api/movies/overview", async (_, res) => {
       const downloadItems =
         downloadItemsFromQueue.length > 0
           ? downloadItemsFromQueue
-          : qbtItemsFallback.map((qbt) => ({
+          : activeQbtItems.map((qbt) => ({
               hash: qbt.hash,
               name: qbt.name,
               state: qbt.state,
@@ -1316,7 +1317,7 @@ app.get("/api/movies/overview", async (_, res) => {
       let status = "available";
       if (queueState === "error") {
         status = "error";
-      } else if (queueState === "downloading" || qbtItems.length > 0) {
+      } else if (activeQbtItems.length > 0) {
         status = "downloading";
       } else if (!hasFile) {
         status = "wanted";
